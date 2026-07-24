@@ -32,19 +32,37 @@ export interface Holiday {
   label: string
 }
 
+// Multiplicateurs appliqués au taux horaire de base pour chaque palier de
+// majoration (ex: 115 -> ×1.15). Éditables au cas où la loi ou la
+// convention collective change.
+export interface HsRates {
+  r115: number
+  r150: number
+  r175: number
+  r200: number
+}
+
 export interface Settings {
   salaireBase: number // FCFA / mois
+  tauxHoraire: number // FCFA / heure, utilisé pour tous les calculs "dû"
+  hsRates: HsRates
   holidays: Holiday[]
   payPeriodStartDay: number // jour du mois où démarre la période de paie (ex: 16)
+}
+
+// Une ligne "Nombre × Base = Montant", comme sur le bulletin de paie.
+export interface PaidLine {
+  heures: number
+  taux: number // FCFA / heure, taux chargé tel qu'affiché sur le bulletin
 }
 
 // Montants réellement payés (lus sur le bulletin de paie) pour une période,
 // saisis manuellement pour le comparatif payé / dû.
 export interface PaidAmounts {
-  hs115: number
-  hs150: number
-  hs175: number
-  hs200: number
+  hs115: PaidLine
+  hs150: PaidLine
+  hs175: PaidLine
+  hs200: PaidLine
 }
 
 export type PaidByPeriod = Record<string, PaidAmounts> // clé = period.start (YYYY-MM-DD)

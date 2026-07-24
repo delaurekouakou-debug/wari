@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { computePay, computePeriodReport, getPayPeriod, LEGAL_MONTHLY_HOURS, shiftPayPeriod } from '../lib/calcEngine'
+import { computePay, computePeriodReport, getPayPeriod, shiftPayPeriod } from '../lib/calcEngine'
 import { exportReportExcel, exportReportPdf } from '../lib/exportReport'
 import { formatDateKey } from '../lib/dateUtils'
 import type { Planning, Settings } from '../lib/types'
@@ -18,14 +18,13 @@ export default function ReportsView({ planning, settings }: Props) {
   const holidaySet = useMemo(() => new Set(settings.holidays.map((h) => h.date)), [settings.holidays])
   const report = useMemo(() => computePeriodReport(planning, holidaySet, period), [planning, holidaySet, period])
 
-  const tauxHoraire = settings.salaireBase > 0 ? settings.salaireBase / LEGAL_MONTHLY_HOURS : 0
-  const pay = computePay(report, tauxHoraire, settings.salaireBase)
+  const pay = computePay(report, settings.tauxHoraire, settings.salaireBase, settings.hsRates)
 
   const rows = [
-    { code: '0820', label: 'MONTANT DES HS 115%', rate: '+15%', hours: report.hs115Hours, amount: pay.hs115Amount },
-    { code: '0830', label: 'MONTANT DES HS 150%', rate: '+50%', hours: report.hs150Hours, amount: pay.hs150Amount },
-    { code: '0840', label: 'MONTANT DES HS 175%', rate: '+75%', hours: report.hs175Hours, amount: pay.hs175Amount },
-    { code: '0850', label: 'MONTANT DES HS 200%', rate: '+100%', hours: report.hs200Hours, amount: pay.hs200Amount },
+    { code: '0820', label: `MONTANT DES HS ${settings.hsRates.r115}%`, base: pay.hs115Rate, hours: report.hs115Hours, amount: pay.hs115Amount },
+    { code: '0830', label: `MONTANT DES HS ${settings.hsRates.r150}%`, base: pay.hs150Rate, hours: report.hs150Hours, amount: pay.hs150Amount },
+    { code: '0840', label: `MONTANT DES HS ${settings.hsRates.r175}%`, base: pay.hs175Rate, hours: report.hs175Hours, amount: pay.hs175Amount },
+    { code: '0850', label: `MONTANT DES HS ${settings.hsRates.r200}%`, base: pay.hs200Rate, hours: report.hs200Hours, amount: pay.hs200Amount },
   ]
 
   return (
@@ -62,14 +61,15 @@ export default function ReportsView({ planning, settings }: Props) {
         </div>
       </div>
 
-      {settings.salaireBase === 0 && (
+      {settings.tauxHoraire === 0 && (
         <p className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-900 rounded-md px-3 py-2">
-          Renseigne ton salaire de base dans les Paramètres pour voir les montants en FCFA.
+          Renseigne le taux horaire de base dans les Paramètres pour voir les montants en FCFA.
         </p>
       )}
 
       <div className="text-sm text-gray-500">
-        Taux horaire légal : <strong className="text-gray-900 dark:text-gray-100">{fcfa.format(Math.round(tauxHoraire))} FCFA/h</strong>{' '}
+        Taux horaire de base :{' '}
+        <strong className="text-gray-900 dark:text-gray-100">{fcfa.format(Math.round(settings.tauxHoraire))} FCFA/h</strong>{' '}
         — Heures normales (couvertes par le salaire de base) : {hrs(report.normalHours)} — Total travaillé :{' '}
         {hrs(report.totalHours)}
       </div>
@@ -80,7 +80,7 @@ export default function ReportsView({ planning, settings }: Props) {
             <tr className="border-b border-gray-300 dark:border-gray-700 text-left">
               <th className="py-2 pr-3">Code</th>
               <th className="py-2 pr-3">Libellé</th>
-              <th className="py-2 pr-3">Taux</th>
+              <th className="py-2 pr-3">Base (taux chargé)</th>
               <th className="py-2 pr-3">Heures</th>
               <th className="py-2 pr-3">Montant</th>
             </tr>
@@ -90,7 +90,7 @@ export default function ReportsView({ planning, settings }: Props) {
               <tr key={row.code} className="border-b border-gray-100 dark:border-gray-800">
                 <td className="py-1.5 pr-3 text-gray-500">{row.code}</td>
                 <td className="py-1.5 pr-3">{row.label}</td>
-                <td className="py-1.5 pr-3 text-gray-500">{row.rate}</td>
+                <td className="py-1.5 pr-3 text-gray-500">{fcfa.format(Math.round(row.base))} FCFA/h</td>
                 <td className="py-1.5 pr-3">{hrs(row.hours)}</td>
                 <td className="py-1.5 pr-3">{fcfa.format(Math.round(row.amount))} FCFA</td>
               </tr>

@@ -17,9 +17,13 @@ export const DEFAULT_HOLIDAYS: Holiday[] = [
 
 export const DEFAULT_SETTINGS: Settings = {
   salaireBase: 0,
+  tauxHoraire: 0,
+  hsRates: { r115: 115, r150: 150, r175: 175, r200: 200 },
   holidays: DEFAULT_HOLIDAYS,
   payPeriodStartDay: 16,
 }
+
+const EMPTY_PAID_LINE = { heures: 0, taux: 0 }
 
 export function loadData(): AppData {
   try {
@@ -28,8 +32,22 @@ export function loadData(): AppData {
     const parsed = JSON.parse(raw) as AppData
     return {
       planning: parsed.planning ?? {},
-      settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
-      paidByPeriod: parsed.paidByPeriod ?? {},
+      settings: {
+        ...DEFAULT_SETTINGS,
+        ...parsed.settings,
+        hsRates: { ...DEFAULT_SETTINGS.hsRates, ...parsed.settings?.hsRates },
+      },
+      paidByPeriod: Object.fromEntries(
+        Object.entries(parsed.paidByPeriod ?? {}).map(([period, amounts]) => [
+          period,
+          {
+            hs115: { ...EMPTY_PAID_LINE, ...amounts?.hs115 },
+            hs150: { ...EMPTY_PAID_LINE, ...amounts?.hs150 },
+            hs175: { ...EMPTY_PAID_LINE, ...amounts?.hs175 },
+            hs200: { ...EMPTY_PAID_LINE, ...amounts?.hs200 },
+          },
+        ]),
+      ),
       version: 1,
     }
   } catch {

@@ -14,7 +14,7 @@
 // Cela évite de compter deux fois la base d'une heure qui serait à la fois
 // heure supp hebdomadaire et heure de nuit, par exemple.
 import { SHIFTS, shiftDurationHours, toMinutes } from './shiftDefs'
-import type { Planning } from './types'
+import type { HsRates, Planning } from './types'
 import { addDaysKey, compareDateKeys, formatDateKey, isSundayKey, mondayOfWeek, parseDateKey } from './dateUtils'
 
 const NIGHT_START = 21 * 60 // 21h
@@ -228,6 +228,10 @@ export const LEGAL_MONTHLY_HOURS = (40 * 52) / 12
 export interface PayBreakdown {
   tauxHoraire: number
   baseAmount: number
+  hs115Rate: number
+  hs150Rate: number
+  hs175Rate: number
+  hs200Rate: number
   hs115Amount: number
   hs150Amount: number
   hs175Amount: number
@@ -236,15 +240,28 @@ export interface PayBreakdown {
   totalPay: number
 }
 
-export function computePay(report: PeriodReport, tauxHoraire: number, salaireBase: number): PayBreakdown {
-  const hs115Amount = report.hs115Hours * tauxHoraire * 1.15
-  const hs150Amount = report.hs150Hours * tauxHoraire * 1.5
-  const hs175Amount = report.hs175Hours * tauxHoraire * 1.75
-  const hs200Amount = report.hs200Hours * tauxHoraire * 2.0
+export function computePay(
+  report: PeriodReport,
+  tauxHoraire: number,
+  salaireBase: number,
+  hsRates: HsRates,
+): PayBreakdown {
+  const hs115Rate = tauxHoraire * (hsRates.r115 / 100)
+  const hs150Rate = tauxHoraire * (hsRates.r150 / 100)
+  const hs175Rate = tauxHoraire * (hsRates.r175 / 100)
+  const hs200Rate = tauxHoraire * (hsRates.r200 / 100)
+  const hs115Amount = report.hs115Hours * hs115Rate
+  const hs150Amount = report.hs150Hours * hs150Rate
+  const hs175Amount = report.hs175Hours * hs175Rate
+  const hs200Amount = report.hs200Hours * hs200Rate
   const totalSupplements = hs115Amount + hs150Amount + hs175Amount + hs200Amount
   return {
     tauxHoraire,
     baseAmount: salaireBase,
+    hs115Rate,
+    hs150Rate,
+    hs175Rate,
+    hs200Rate,
     hs115Amount,
     hs150Amount,
     hs175Amount,

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Holiday, Settings } from '../lib/types'
+import type { Holiday, HsRates, Settings } from '../lib/types'
 import { LEGAL_MONTHLY_HOURS } from '../lib/calcEngine'
 
 interface Props {
@@ -13,10 +13,14 @@ export default function SettingsView({ settings, onChange }: Props) {
   const [newHolidayDate, setNewHolidayDate] = useState('')
   const [newHolidayLabel, setNewHolidayLabel] = useState('')
 
-  const tauxHoraireLegal = settings.salaireBase > 0 ? settings.salaireBase / LEGAL_MONTHLY_HOURS : 0
+  const tauxHoraireSuggere = settings.salaireBase > 0 ? settings.salaireBase / LEGAL_MONTHLY_HOURS : 0
 
   function update<K extends keyof Settings>(key: K, value: Settings[K]) {
     onChange({ ...settings, [key]: value })
+  }
+
+  function updateRate<K extends keyof HsRates>(key: K, value: number) {
+    onChange({ ...settings, hsRates: { ...settings.hsRates, [key]: value } })
   }
 
   function addHoliday() {
@@ -53,8 +57,63 @@ export default function SettingsView({ settings, onChange }: Props) {
             Sert à calculer le taux horaire légal ({LEGAL_MONTHLY_HOURS.toFixed(2)}h/mois, équivalent 40h/semaine).
           </span>
         </label>
-        <div className="text-sm rounded-md bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 px-3 py-2">
-          Taux horaire légal calculé : <strong>{fcfa.format(Math.round(tauxHoraireLegal))} FCFA/h</strong>
+        <label className="block text-sm">
+          Taux horaire de base (FCFA/h) — utilisé pour tous les calculs de montants dus
+          <div className="mt-1 flex gap-2">
+            <input
+              type="number"
+              min={0}
+              value={settings.tauxHoraire || ''}
+              onChange={(e) => update('tauxHoraire', Number(e.target.value) || 0)}
+              className="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5"
+              placeholder="ex: 865"
+            />
+            <button
+              type="button"
+              onClick={() => update('tauxHoraire', Math.round(tauxHoraireSuggere))}
+              disabled={tauxHoraireSuggere === 0}
+              className="shrink-0 px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 text-sm disabled:opacity-40"
+            >
+              Utiliser {tauxHoraireSuggere > 0 ? `${fcfa.format(Math.round(tauxHoraireSuggere))} FCFA/h` : 'le calcul'}
+            </button>
+          </div>
+          <span className="text-xs text-gray-500">
+            Valeur suggérée = salaire de base ÷ {LEGAL_MONTHLY_HOURS.toFixed(2)}h/mois (équivalent 40h/semaine). Modifie
+            librement si ton entreprise applique un autre taux.
+          </span>
+        </label>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Majorations heures supplémentaires</h2>
+        <p className="text-xs text-gray-500">
+          Multiplicateurs appliqués au taux horaire de base pour chaque palier (100 = taux plein sans majoration).
+          Valeurs légales par défaut : 115% (41e-46e h/semaine), 150% (au-delà 46e h), 175% (nuit ou dimanche/férié
+          jour), 200% (dimanche/férié nuit).
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {(
+            [
+              ['r115', 'HS 115%'],
+              ['r150', 'HS 150%'],
+              ['r175', 'HS 175%'],
+              ['r200', 'HS 200%'],
+            ] as [keyof HsRates, string][]
+          ).map(([key, label]) => (
+            <label key={key} className="text-sm">
+              {label}
+              <div className="mt-1 flex items-center gap-1">
+                <input
+                  type="number"
+                  min={0}
+                  value={settings.hsRates[key]}
+                  onChange={(e) => updateRate(key, Number(e.target.value) || 0)}
+                  className="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5"
+                />
+                <span className="text-gray-500">%</span>
+              </div>
+            </label>
+          ))}
         </div>
         <p className="text-xs text-gray-500">
           Pour comparer avec les montants réellement payés sur ton bulletin, utilise l'onglet Comparatif.
