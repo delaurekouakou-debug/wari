@@ -19,7 +19,7 @@ export const DEFAULT_SETTINGS: Settings = {
   salaireBase: 0,
   hsRates: { r115: 115, r150: 150, r175: 175, r200: 200 },
   // Bases horaires chargées (FCFA/h) telles que lues sur le bulletin de paie.
-  hsBases: { r115: 2838.46, r150: 3702.34, r175: 4319.4, r200: 0 },
+  hsBases: { r115: 2838.46, r150: 3702.34, r175: 4319.4, r200: 4936.46 },
   holidays: DEFAULT_HOLIDAYS,
   payPeriodStartDay: 16,
 }
