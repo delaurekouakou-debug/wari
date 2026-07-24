@@ -19,14 +19,15 @@ export default function ReportsView({ planning, settings }: Props) {
   const holidaySet = useMemo(() => new Set(settings.holidays.map((h) => h.date)), [settings.holidays])
   const report = useMemo(() => computePeriodReport(planning, holidaySet, period), [planning, holidaySet, period])
 
-  const pay = computePay(report, settings.hsBases, settings.salaireBase)
+  const pay = computePay(report, settings.hsBases, settings.panierBase, settings.salaireBase)
   const hasBases = settings.hsBases.r115 > 0 || settings.hsBases.r150 > 0 || settings.hsBases.r175 > 0 || settings.hsBases.r200 > 0
 
   const rows = [
-    { code: '0820', label: `MONTANT DES HS ${settings.hsRates.r115}%`, base: pay.hs115Rate, hours: report.hs115Hours, amount: pay.hs115Amount },
-    { code: '0830', label: `MONTANT DES HS ${settings.hsRates.r150}%`, base: pay.hs150Rate, hours: report.hs150Hours, amount: pay.hs150Amount },
-    { code: '0840', label: `MONTANT DES HS ${settings.hsRates.r175}%`, base: pay.hs175Rate, hours: report.hs175Hours, amount: pay.hs175Amount },
-    { code: '0850', label: `MONTANT DES HS ${settings.hsRates.r200}%`, base: pay.hs200Rate, hours: report.hs200Hours, amount: pay.hs200Amount },
+    { code: '0820', label: `MONTANT DES HS ${settings.hsRates.r115}%`, base: pay.hs115Rate, qty: report.hs115Hours, unit: 'h', amount: pay.hs115Amount },
+    { code: '0830', label: `MONTANT DES HS ${settings.hsRates.r150}%`, base: pay.hs150Rate, qty: report.hs150Hours, unit: 'h', amount: pay.hs150Amount },
+    { code: '0840', label: `MONTANT DES HS ${settings.hsRates.r175}%`, base: pay.hs175Rate, qty: report.hs175Hours, unit: 'h', amount: pay.hs175Amount },
+    { code: '0850', label: `MONTANT DES HS ${settings.hsRates.r200}%`, base: pay.hs200Rate, qty: report.hs200Hours, unit: 'h', amount: pay.hs200Amount },
+    { code: '1170', label: 'PRIME DE PANIER', base: settings.panierBase, qty: report.panierCount, unit: 'vacation(s)', amount: pay.panierAmount },
   ]
 
   return (
@@ -80,8 +81,8 @@ export default function ReportsView({ planning, settings }: Props) {
             <tr className="border-b border-gray-300 dark:border-gray-700 text-left">
               <th className="py-2 pr-3">Code</th>
               <th className="py-2 pr-3">Libellé</th>
-              <th className="py-2 pr-3">Base (taux chargé)</th>
-              <th className="py-2 pr-3">Heures</th>
+              <th className="py-2 pr-3">Base</th>
+              <th className="py-2 pr-3">Quantité</th>
               <th className="py-2 pr-3">Montant</th>
             </tr>
           </thead>
@@ -90,8 +91,10 @@ export default function ReportsView({ planning, settings }: Props) {
               <tr key={row.code} className="border-b border-gray-100 dark:border-gray-800">
                 <td className="py-1.5 pr-3 text-gray-500">{row.code}</td>
                 <td className="py-1.5 pr-3">{row.label}</td>
-                <td className="py-1.5 pr-3 text-gray-500">{fcfa2.format(row.base)} FCFA/h</td>
-                <td className="py-1.5 pr-3">{hrs(row.hours)}</td>
+                <td className="py-1.5 pr-3 text-gray-500">{fcfa2.format(row.base)} FCFA</td>
+                <td className="py-1.5 pr-3">
+                  {row.unit === 'h' ? hrs(row.qty) : `${row.qty} ${row.unit}`}
+                </td>
                 <td className="py-1.5 pr-3">{fcfa.format(Math.round(row.amount))} FCFA</td>
               </tr>
             ))}

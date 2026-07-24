@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hsRates: { r115: 115, r150: 150, r175: 175, r200: 200 },
   // Bases horaires chargées (FCFA/h) telles que lues sur le bulletin de paie.
   hsBases: { r115: 2838.46, r150: 3702.34, r175: 4319.4, r200: 4936.46 },
+  panierBase: 1298,
   holidays: DEFAULT_HOLIDAYS,
   payPeriodStartDay: 16,
 }
@@ -47,6 +48,7 @@ export function loadData(): AppData {
             hs150: { ...EMPTY_PAID_LINE, ...amounts?.hs150 },
             hs175: { ...EMPTY_PAID_LINE, ...amounts?.hs175 },
             hs200: { ...EMPTY_PAID_LINE, ...amounts?.hs200 },
+            panier: { ...EMPTY_PAID_LINE, ...amounts?.panier },
           },
         ]),
       ),

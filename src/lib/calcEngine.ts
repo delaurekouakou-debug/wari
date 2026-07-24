@@ -14,8 +14,13 @@
 // Cela évite de compter deux fois la base d'une heure qui serait à la fois
 // heure supp hebdomadaire et heure de nuit, par exemple.
 import { SHIFTS, shiftDurationHours, toMinutes } from './shiftDefs'
-import type { HsBases, Planning } from './types'
+import type { HsBases, Planning, ShiftKey } from './types'
 import { addDaysKey, compareDateKeys, formatDateKey, isSundayKey, mondayOfWeek, parseDateKey } from './dateUtils'
+
+// Vacations donnant droit à la prime de panier (indemnité de repas pour le
+// travail de nuit) : une occurrence par jour où l'une de ces vacations est
+// travaillée.
+export const PANIER_SHIFT_KEYS: ShiftKey[] = ['M12_NUIT', 'M8_NUIT']
 
 const NIGHT_START = 21 * 60 // 21h
 const NIGHT_END = 5 * 60 // 5h (jour suivant)
@@ -190,6 +195,7 @@ export interface PeriodReport {
   hs150Hours: number
   hs175Hours: number
   hs200Hours: number
+  panierCount: number
   weeks: WeekBreakdown[]
 }
 
@@ -210,6 +216,12 @@ export function computePeriodReport(planning: Planning, holidays: Set<string>, p
   const allWeeks = computeWeeklyBreakdown(planning)
   const weeksInPeriod = allWeeks.filter((w) => w.weekEnd >= period.start && w.weekStart <= period.end)
 
+  let panierCount = 0
+  for (const [dateKey, shiftKey] of Object.entries(planning)) {
+    if (dateKey < period.start || dateKey > period.end) continue
+    if (PANIER_SHIFT_KEYS.includes(shiftKey)) panierCount++
+  }
+
   return {
     period,
     totalHours,
@@ -218,6 +230,7 @@ export function computePeriodReport(planning: Planning, holidays: Set<string>, p
     hs150Hours: totals.hs150Hours,
     hs175Hours: totals.hs175Hours,
     hs200Hours: totals.hs200Hours,
+    panierCount,
     weeks: weeksInPeriod,
   }
 }
@@ -235,17 +248,23 @@ export interface PayBreakdown {
   hs150Amount: number
   hs175Amount: number
   hs200Amount: number
+  panierAmount: number
   totalSupplements: number
   totalPay: number
 }
 
-/** hsBases : base horaire chargée (FCFA/h) par palier, telle que lue sur le bulletin de paie. */
-export function computePay(report: PeriodReport, hsBases: HsBases, salaireBase: number): PayBreakdown {
+/**
+ * hsBases : base horaire chargée (FCFA/h) par palier, telle que lue sur le
+ * bulletin de paie. panierBase : indemnité de panier (FCFA) par vacation de
+ * nuit travaillée.
+ */
+export function computePay(report: PeriodReport, hsBases: HsBases, panierBase: number, salaireBase: number): PayBreakdown {
   const hs115Amount = report.hs115Hours * hsBases.r115
   const hs150Amount = report.hs150Hours * hsBases.r150
   const hs175Amount = report.hs175Hours * hsBases.r175
   const hs200Amount = report.hs200Hours * hsBases.r200
-  const totalSupplements = hs115Amount + hs150Amount + hs175Amount + hs200Amount
+  const panierAmount = report.panierCount * panierBase
+  const totalSupplements = hs115Amount + hs150Amount + hs175Amount + hs200Amount + panierAmount
   return {
     baseAmount: salaireBase,
     hs115Rate: hsBases.r115,
@@ -256,6 +275,7 @@ export function computePay(report: PeriodReport, hsBases: HsBases, salaireBase: 
     hs150Amount,
     hs175Amount,
     hs200Amount,
+    panierAmount,
     totalSupplements,
     totalPay: salaireBase + totalSupplements,
   }

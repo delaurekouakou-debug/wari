@@ -127,6 +127,26 @@ export default function SettingsView({ settings, onChange }: Props) {
       </section>
 
       <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Prime de panier</h2>
+        <p className="text-xs text-gray-500">
+          Indemnité versée pour chaque vacation de nuit travaillée (18h-6h30 ou 22h-6h30), compensant
+          l'impossibilité de prendre un repas dans des conditions normales.
+        </p>
+        <label className="block text-sm max-w-xs">
+          Base (FCFA par vacation de nuit)
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={settings.panierBase || ''}
+            onChange={(e) => update('panierBase', Number(e.target.value) || 0)}
+            className="mt-1 w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5"
+            placeholder="ex: 1298"
+          />
+        </label>
+      </section>
+
+      <section className="space-y-3">
         <h2 className="text-lg font-semibold">Période de paie</h2>
         <label className="block text-sm">
           Jour de début de la période de paie

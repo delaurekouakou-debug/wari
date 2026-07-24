@@ -56,14 +56,17 @@ export interface Settings {
   salaireBase: number // FCFA / mois
   hsRates: HsRates
   hsBases: HsBases
+  panierBase: number // FCFA par vacation de nuit (indemnité de panier)
   holidays: Holiday[]
   payPeriodStartDay: number // jour du mois où démarre la période de paie (ex: 16)
 }
 
-// Une ligne "Nombre × Base = Montant", comme sur le bulletin de paie.
+// Une ligne "Nombre × Base = Montant", comme sur le bulletin de paie. Pour
+// les paliers HS, "heures" est un nombre d'heures ; pour la prime de
+// panier, "heures" représente un nombre de vacations de nuit.
 export interface PaidLine {
   heures: number
-  taux: number // FCFA / heure, taux chargé tel qu'affiché sur le bulletin
+  taux: number // FCFA / unité, taux chargé tel qu'affiché sur le bulletin
 }
 
 // Montants réellement payés (lus sur le bulletin de paie) pour une période,
@@ -73,6 +76,7 @@ export interface PaidAmounts {
   hs150: PaidLine
   hs175: PaidLine
   hs200: PaidLine
+  panier: PaidLine
 }
 
 export type PaidByPeriod = Record<string, PaidAmounts> // clé = period.start (YYYY-MM-DD)

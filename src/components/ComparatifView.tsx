@@ -1,7 +1,17 @@
 import { useMemo, useState } from 'react'
-import { computePay, computePeriodReport, getPayPeriod, shiftPayPeriod } from '../lib/calcEngine'
+import { format } from 'date-fns'
+import { fr } from 'date-fns/locale'
+import {
+  computeDayBuckets,
+  computePay,
+  computePeriodReport,
+  getPayPeriod,
+  PANIER_SHIFT_KEYS,
+  shiftPayPeriod,
+} from '../lib/calcEngine'
 import { exportComparatifExcel, exportComparatifPdf } from '../lib/exportReport'
-import { formatDateKey } from '../lib/dateUtils'
+import { addDaysKey, compareDateKeys, formatDateKey, isSundayKey, parseDateKey } from '../lib/dateUtils'
+import { SHIFTS } from '../lib/shiftDefs'
 import type { PaidAmounts, PaidByPeriod, PaidLine, Planning, Settings } from '../lib/types'
 
 interface Props {
@@ -15,7 +25,33 @@ const fcfa = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 })
 const fcfa2 = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 })
 const hrs = (n: number) => `${n.toFixed(2)} h`
 const EMPTY_LINE: PaidLine = { heures: 0, taux: 0 }
-const EMPTY_PAID: PaidAmounts = { hs115: EMPTY_LINE, hs150: EMPTY_LINE, hs175: EMPTY_LINE, hs200: EMPTY_LINE }
+const EMPTY_PAID: PaidAmounts = {
+  hs115: EMPTY_LINE,
+  hs150: EMPTY_LINE,
+  hs175: EMPTY_LINE,
+  hs200: EMPTY_LINE,
+  panier: EMPTY_LINE,
+}
+
+interface DayDetail {
+  date: string
+  shiftLabel: string
+  isSpecial: boolean
+  isPanier: boolean
+  hs115: number
+  hs150: number
+  hs175: number
+  hs200: number
+}
+
+function motifFor(d: DayDetail): string {
+  const reasons: string[] = []
+  if (d.hs115 > 0 || d.hs150 > 0) reasons.push('Heures supp hebdomadaires (>40h/46h)')
+  if (d.hs175 > 0) reasons.push(d.isSpecial ? 'Dimanche/férié (jour)' : 'Nuit (21h-5h)')
+  if (d.hs200 > 0) reasons.push('Nuit + dimanche/férié')
+  if (d.isPanier) reasons.push('Vacation de nuit (panier)')
+  return reasons.join(' · ')
+}
 
 export default function ComparatifView({ planning, settings, paidByPeriod, onChange }: Props) {
   const [period, setPeriod] = useState(() => getPayPeriod(formatDateKey(new Date()), settings.payPeriodStartDay))
@@ -23,7 +59,7 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
   const holidaySet = useMemo(() => new Set(settings.holidays.map((h) => h.date)), [settings.holidays])
   const report = useMemo(() => computePeriodReport(planning, holidaySet, period), [planning, holidaySet, period])
 
-  const pay = computePay(report, settings.hsBases, settings.salaireBase)
+  const pay = computePay(report, settings.hsBases, settings.panierBase, settings.salaireBase)
 
   const paid = paidByPeriod[period.start] ?? EMPTY_PAID
 
@@ -38,22 +74,57 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
     code: string
     label: string
     paidKey: keyof PaidAmounts
-    heuresDue: number
+    qtyDue: number
+    unit: string
     baseDue: number
     montantDue: number
   }[] = [
-    { code: '0820', label: `HS ${settings.hsRates.r115}%`, paidKey: 'hs115', heuresDue: report.hs115Hours, baseDue: pay.hs115Rate, montantDue: pay.hs115Amount },
-    { code: '0830', label: `HS ${settings.hsRates.r150}%`, paidKey: 'hs150', heuresDue: report.hs150Hours, baseDue: pay.hs150Rate, montantDue: pay.hs150Amount },
-    { code: '0840', label: `HS ${settings.hsRates.r175}%`, paidKey: 'hs175', heuresDue: report.hs175Hours, baseDue: pay.hs175Rate, montantDue: pay.hs175Amount },
-    { code: '0850', label: `HS ${settings.hsRates.r200}%`, paidKey: 'hs200', heuresDue: report.hs200Hours, baseDue: pay.hs200Rate, montantDue: pay.hs200Amount },
+    { code: '0820', label: `HS ${settings.hsRates.r115}%`, paidKey: 'hs115', qtyDue: report.hs115Hours, unit: 'h', baseDue: pay.hs115Rate, montantDue: pay.hs115Amount },
+    { code: '0830', label: `HS ${settings.hsRates.r150}%`, paidKey: 'hs150', qtyDue: report.hs150Hours, unit: 'h', baseDue: pay.hs150Rate, montantDue: pay.hs150Amount },
+    { code: '0840', label: `HS ${settings.hsRates.r175}%`, paidKey: 'hs175', qtyDue: report.hs175Hours, unit: 'h', baseDue: pay.hs175Rate, montantDue: pay.hs175Amount },
+    { code: '0850', label: `HS ${settings.hsRates.r200}%`, paidKey: 'hs200', qtyDue: report.hs200Hours, unit: 'h', baseDue: pay.hs200Rate, montantDue: pay.hs200Amount },
+    { code: '1170', label: 'PRIME DE PANIER', paidKey: 'panier', qtyDue: report.panierCount, unit: 'vac.', baseDue: settings.panierBase, montantDue: pay.panierAmount },
   ]
 
   const totalDue = pay.totalSupplements
-  const totalPaid = (['hs115', 'hs150', 'hs175', 'hs200'] as const).reduce(
+  const totalPaid = (['hs115', 'hs150', 'hs175', 'hs200', 'panier'] as const).reduce(
     (sum, key) => sum + paid[key].heures * paid[key].taux,
     0,
   )
   const totalEcart = totalPaid - totalDue
+
+  const dayDetails = useMemo<DayDetail[]>(() => {
+    const buckets = computeDayBuckets(planning, holidaySet)
+    const details: DayDetail[] = []
+    for (const [date, b] of buckets) {
+      if (date < period.start || date > period.end) continue
+      const shiftKey = planning[date]
+      const isPanier = !!shiftKey && PANIER_SHIFT_KEYS.includes(shiftKey)
+      const hasHs = b.hs115Hours > 0 || b.hs150Hours > 0 || b.hs175Hours > 0 || b.hs200Hours > 0
+      if (!hasHs && !isPanier) continue
+
+      let shiftLabel: string
+      if (shiftKey && shiftKey !== 'REPOS') {
+        shiftLabel = SHIFTS[shiftKey].label
+      } else {
+        const prevShift = planning[addDaysKey(date, -1)]
+        shiftLabel = prevShift && SHIFTS[prevShift].crossesMidnight ? `${SHIFTS[prevShift].label} (suite)` : '—'
+      }
+
+      details.push({
+        date,
+        shiftLabel,
+        isSpecial: isSundayKey(date) || holidaySet.has(date),
+        isPanier,
+        hs115: b.hs115Hours,
+        hs150: b.hs150Hours,
+        hs175: b.hs175Hours,
+        hs200: b.hs200Hours,
+      })
+    }
+    details.sort((a, b) => compareDateKeys(a.date, b.date))
+    return details
+  }, [planning, holidaySet, period])
 
   return (
     <div className="space-y-6">
@@ -90,8 +161,8 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
       </div>
 
       <p className="text-sm text-gray-500">
-        Saisis, pour chaque ligne, le nombre d'heures et le taux horaire chargé (base) tels qu'affichés sur ton
-        bulletin de paie — le montant payé est calculé automatiquement (heures × base), comme sur le bulletin.
+        Saisis, pour chaque ligne, la quantité (heures ou vacations) et le taux/base tels qu'affichés sur ton
+        bulletin de paie — le montant payé est calculé automatiquement (quantité × base), comme sur le bulletin.
       </p>
 
       <div className="overflow-x-auto">
@@ -118,10 +189,10 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
               </th>
             </tr>
             <tr className="border-b border-gray-300 dark:border-gray-700 text-left text-xs text-gray-500">
-              <th className="py-1 pr-3 border-l border-gray-300 dark:border-gray-700">Heures (N)</th>
+              <th className="py-1 pr-3 border-l border-gray-300 dark:border-gray-700">N</th>
               <th className="py-1 pr-3">Base</th>
               <th className="py-1 pr-3">Montant</th>
-              <th className="py-1 pr-3 border-l border-gray-300 dark:border-gray-700">Heures (N)</th>
+              <th className="py-1 pr-3 border-l border-gray-300 dark:border-gray-700">N</th>
               <th className="py-1 pr-3">Base</th>
               <th className="py-1 pr-3">Montant</th>
             </tr>
@@ -135,7 +206,9 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
                 <tr key={row.code} className="border-b border-gray-100 dark:border-gray-800">
                   <td className="py-1.5 pr-3 text-gray-500">{row.code}</td>
                   <td className="py-1.5 pr-3">{row.label}</td>
-                  <td className="py-1.5 pr-3 border-l border-gray-100 dark:border-gray-800">{hrs(row.heuresDue)}</td>
+                  <td className="py-1.5 pr-3 border-l border-gray-100 dark:border-gray-800">
+                    {row.unit === 'h' ? hrs(row.qtyDue) : `${row.qtyDue} ${row.unit}`}
+                  </td>
                   <td className="py-1.5 pr-3">{fcfa2.format(row.baseDue)}</td>
                   <td className="py-1.5 pr-3">{fcfa.format(Math.round(row.montantDue))}</td>
                   <td className="py-1.5 pr-3 border-l border-gray-100 dark:border-gray-800 no-print">
@@ -161,7 +234,7 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
                   </td>
                   <td className="py-1.5 pr-3 no-print">{fcfa.format(Math.round(montantPaye))}</td>
                   <td className="py-1.5 pr-3 border-l border-gray-100 dark:border-gray-800 hidden print:table-cell">
-                    {hrs(line.heures)}
+                    {row.unit === 'h' ? hrs(line.heures) : `${line.heures} ${row.unit}`}
                   </td>
                   <td className="py-1.5 pr-3 hidden print:table-cell">{fcfa.format(Math.round(line.taux))}</td>
                   <td className="py-1.5 pr-3 hidden print:table-cell">{fcfa.format(Math.round(montantPaye))}</td>
@@ -204,9 +277,102 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
         </p>
       )}
 
+      <section className="space-y-3 no-print">
+        <h3 className="font-semibold">Base légale et justification — pour discussion avec les RH</h3>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-md border border-gray-200 dark:border-gray-800 p-3 text-sm space-y-1">
+            <p className="font-medium">HS {settings.hsRates.r115}%</p>
+            <p className="text-gray-600 dark:text-gray-400">
+              Heures effectuées entre la 41e et la 46e heure de la semaine civile (lundi-dimanche), au-delà de la
+              durée légale de 40h. <span className="text-gray-500">Code du travail ivoirien (loi n°2015-532), art.
+              21 et suivants ; majoration de 15% pour les 6 premières heures supplémentaires.</span>
+            </p>
+          </div>
+          <div className="rounded-md border border-gray-200 dark:border-gray-800 p-3 text-sm space-y-1">
+            <p className="font-medium">HS {settings.hsRates.r150}%</p>
+            <p className="text-gray-600 dark:text-gray-400">
+              Heures effectuées au-delà de la 46e heure de la même semaine civile.{' '}
+              <span className="text-gray-500">Même base légale ; majoration de 50% au-delà de la 6e heure
+              supplémentaire.</span>
+            </p>
+          </div>
+          <div className="rounded-md border border-gray-200 dark:border-gray-800 p-3 text-sm space-y-1">
+            <p className="font-medium">HS {settings.hsRates.r175}%</p>
+            <p className="text-gray-600 dark:text-gray-400">
+              Heures effectuées de nuit (21h-5h), quel que soit le nombre d'heures déjà travaillées dans la semaine,
+              ou heures de jour effectuées un dimanche ou un jour férié.{' '}
+              <span className="text-gray-500">Décret n°96-204 du 7 mars 1996 relatif au travail de nuit (+75%) ;
+              majoration dimanche/férié fixée à +75% pour les heures de jour (Décret n°96-203).</span>
+            </p>
+          </div>
+          <div className="rounded-md border border-gray-200 dark:border-gray-800 p-3 text-sm space-y-1">
+            <p className="font-medium">HS {settings.hsRates.r200}%</p>
+            <p className="text-gray-600 dark:text-gray-400">
+              Heures effectuées de nuit (21h-5h) un dimanche ou un jour férié.{' '}
+              <span className="text-gray-500">Cumul des deux motifs (nuit + dimanche/férié), retenu au taux de
+              +100%.</span>
+            </p>
+          </div>
+          <div className="rounded-md border border-gray-200 dark:border-gray-800 p-3 text-sm space-y-1 sm:col-span-2">
+            <p className="font-medium">Prime de panier</p>
+            <p className="text-gray-600 dark:text-gray-400">
+              Indemnité versée pour chaque vacation de nuit travaillée (18h-6h30 ou 22h-6h30), en compensation de
+              l'impossibilité de prendre un repas dans des conditions normales pendant les heures de nuit.
+            </p>
+          </div>
+        </div>
+        <p className="text-xs text-gray-500">
+          Règle de calcul retenue : quand une heure remplit plusieurs conditions à la fois (ex: heure supp
+          hebdomadaire ET heure de nuit), seul le taux le plus favorable est retenu — pas de cumul des majorations.
+          C'est une hypothèse de calcul à vérifier avec les RH : une lecture cumulative stricte du Code du travail
+          pourrait justifier l'addition des majorations sur ces heures-là.
+        </p>
+      </section>
+
+      {dayDetails.length > 0 && (
+        <section className="space-y-3">
+          <h3 className="font-semibold">Détail journalier — preuves par date</h3>
+          <p className="text-xs text-gray-500">
+            Uniquement les jours générant des heures majorées ou une prime de panier sur la période.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-gray-300 dark:border-gray-700 text-left">
+                  <th className="py-1.5 pr-3">Date</th>
+                  <th className="py-1.5 pr-3">Jour</th>
+                  <th className="py-1.5 pr-3">Vacation</th>
+                  <th className="py-1.5 pr-3">115%</th>
+                  <th className="py-1.5 pr-3">150%</th>
+                  <th className="py-1.5 pr-3">175%</th>
+                  <th className="py-1.5 pr-3">200%</th>
+                  <th className="py-1.5 pr-3">Panier</th>
+                  <th className="py-1.5 pr-3">Motif</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dayDetails.map((d) => (
+                  <tr key={d.date} className="border-b border-gray-100 dark:border-gray-800">
+                    <td className="py-1 pr-3 whitespace-nowrap">{d.date}</td>
+                    <td className="py-1 pr-3 capitalize">{format(parseDateKey(d.date), 'EEEE', { locale: fr })}</td>
+                    <td className="py-1 pr-3">{d.shiftLabel}</td>
+                    <td className="py-1 pr-3">{d.hs115 > 0 ? hrs(d.hs115) : '—'}</td>
+                    <td className="py-1 pr-3">{d.hs150 > 0 ? hrs(d.hs150) : '—'}</td>
+                    <td className="py-1 pr-3">{d.hs175 > 0 ? hrs(d.hs175) : '—'}</td>
+                    <td className="py-1 pr-3">{d.hs200 > 0 ? hrs(d.hs200) : '—'}</td>
+                    <td className="py-1 pr-3">{d.isPanier ? '1 vac.' : '—'}</td>
+                    <td className="py-1 pr-3 text-gray-600 dark:text-gray-400">{motifFor(d)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       <p className="text-xs text-gray-500">
-        Montants en FCFA. Le "Dû" est calculé à partir du taux horaire de base et des majorations réglés dans
-        Paramètres. Les valeurs "Payé" sont saisies manuellement depuis ton bulletin et sauvegardées par période.
+        Montants en FCFA. Le "Dû" est calculé à partir des bases et majorations réglées dans Paramètres. Les valeurs
+        "Payé" sont saisies manuellement depuis ton bulletin et sauvegardées par période.
       </p>
     </div>
   )
