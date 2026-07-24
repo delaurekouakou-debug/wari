@@ -10,6 +10,7 @@ interface Props {
 }
 
 const fcfa = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 })
+const fcfa2 = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 })
 const hrs = (n: number) => `${n.toFixed(2)} h`
 
 export default function ReportsView({ planning, settings }: Props) {
@@ -18,7 +19,8 @@ export default function ReportsView({ planning, settings }: Props) {
   const holidaySet = useMemo(() => new Set(settings.holidays.map((h) => h.date)), [settings.holidays])
   const report = useMemo(() => computePeriodReport(planning, holidaySet, period), [planning, holidaySet, period])
 
-  const pay = computePay(report, settings.tauxHoraire, settings.salaireBase, settings.hsRates)
+  const pay = computePay(report, settings.hsBases, settings.salaireBase)
+  const hasBases = settings.hsBases.r115 > 0 || settings.hsBases.r150 > 0 || settings.hsBases.r175 > 0 || settings.hsBases.r200 > 0
 
   const rows = [
     { code: '0820', label: `MONTANT DES HS ${settings.hsRates.r115}%`, base: pay.hs115Rate, hours: report.hs115Hours, amount: pay.hs115Amount },
@@ -61,16 +63,14 @@ export default function ReportsView({ planning, settings }: Props) {
         </div>
       </div>
 
-      {settings.tauxHoraire === 0 && (
+      {!hasBases && (
         <p className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-900 rounded-md px-3 py-2">
-          Renseigne le taux horaire de base dans les Paramètres pour voir les montants en FCFA.
+          Renseigne les bases horaires par palier dans les Paramètres pour voir les montants en FCFA.
         </p>
       )}
 
       <div className="text-sm text-gray-500">
-        Taux horaire de base :{' '}
-        <strong className="text-gray-900 dark:text-gray-100">{fcfa.format(Math.round(settings.tauxHoraire))} FCFA/h</strong>{' '}
-        — Heures normales (couvertes par le salaire de base) : {hrs(report.normalHours)} — Total travaillé :{' '}
+        Heures normales (couvertes par le salaire de base) : {hrs(report.normalHours)} — Total travaillé :{' '}
         {hrs(report.totalHours)}
       </div>
 
@@ -90,7 +90,7 @@ export default function ReportsView({ planning, settings }: Props) {
               <tr key={row.code} className="border-b border-gray-100 dark:border-gray-800">
                 <td className="py-1.5 pr-3 text-gray-500">{row.code}</td>
                 <td className="py-1.5 pr-3">{row.label}</td>
-                <td className="py-1.5 pr-3 text-gray-500">{fcfa.format(Math.round(row.base))} FCFA/h</td>
+                <td className="py-1.5 pr-3 text-gray-500">{fcfa2.format(row.base)} FCFA/h</td>
                 <td className="py-1.5 pr-3">{hrs(row.hours)}</td>
                 <td className="py-1.5 pr-3">{fcfa.format(Math.round(row.amount))} FCFA</td>
               </tr>

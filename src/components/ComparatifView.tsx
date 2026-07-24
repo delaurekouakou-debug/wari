@@ -12,6 +12,7 @@ interface Props {
 }
 
 const fcfa = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 })
+const fcfa2 = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 })
 const hrs = (n: number) => `${n.toFixed(2)} h`
 const EMPTY_LINE: PaidLine = { heures: 0, taux: 0 }
 const EMPTY_PAID: PaidAmounts = { hs115: EMPTY_LINE, hs150: EMPTY_LINE, hs175: EMPTY_LINE, hs200: EMPTY_LINE }
@@ -22,7 +23,7 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
   const holidaySet = useMemo(() => new Set(settings.holidays.map((h) => h.date)), [settings.holidays])
   const report = useMemo(() => computePeriodReport(planning, holidaySet, period), [planning, holidaySet, period])
 
-  const pay = computePay(report, settings.tauxHoraire, settings.salaireBase, settings.hsRates)
+  const pay = computePay(report, settings.hsBases, settings.salaireBase)
 
   const paid = paidByPeriod[period.start] ?? EMPTY_PAID
 
@@ -135,7 +136,7 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
                   <td className="py-1.5 pr-3 text-gray-500">{row.code}</td>
                   <td className="py-1.5 pr-3">{row.label}</td>
                   <td className="py-1.5 pr-3 border-l border-gray-100 dark:border-gray-800">{hrs(row.heuresDue)}</td>
-                  <td className="py-1.5 pr-3">{fcfa.format(Math.round(row.baseDue))}</td>
+                  <td className="py-1.5 pr-3">{fcfa2.format(row.baseDue)}</td>
                   <td className="py-1.5 pr-3">{fcfa.format(Math.round(row.montantDue))}</td>
                   <td className="py-1.5 pr-3 border-l border-gray-100 dark:border-gray-800 no-print">
                     <input
@@ -151,6 +152,7 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
                     <input
                       type="number"
                       min={0}
+                      step="0.01"
                       value={line.taux || ''}
                       onChange={(e) => updatePaidLine(row.paidKey, 'taux', Number(e.target.value) || 0)}
                       className="w-24 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 py-1"

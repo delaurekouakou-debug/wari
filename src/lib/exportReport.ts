@@ -5,14 +5,15 @@ import type { PayBreakdown, PeriodReport } from './calcEngine'
 import type { PaidAmounts } from './types'
 
 const fcfa = (n: number) => `${Math.round(n).toLocaleString('fr-FR')} FCFA`
+const fcfa2 = (n: number) => `${n.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA`
 const h = (n: number) => `${n.toFixed(2)} h`
 
 function reportRows(report: PeriodReport, pay: PayBreakdown): [string, string, string, string, string][] {
   return [
-    ['0820', 'MONTANT DES HS 115%', fcfa(pay.hs115Rate), h(report.hs115Hours), fcfa(pay.hs115Amount)],
-    ['0830', 'MONTANT DES HS 150%', fcfa(pay.hs150Rate), h(report.hs150Hours), fcfa(pay.hs150Amount)],
-    ['0840', 'MONTANT DES HS 175%', fcfa(pay.hs175Rate), h(report.hs175Hours), fcfa(pay.hs175Amount)],
-    ['0850', 'MONTANT DES HS 200%', fcfa(pay.hs200Rate), h(report.hs200Hours), fcfa(pay.hs200Amount)],
+    ['0820', 'MONTANT DES HS 115%', fcfa2(pay.hs115Rate), h(report.hs115Hours), fcfa(pay.hs115Amount)],
+    ['0830', 'MONTANT DES HS 150%', fcfa2(pay.hs150Rate), h(report.hs150Hours), fcfa(pay.hs150Amount)],
+    ['0840', 'MONTANT DES HS 175%', fcfa2(pay.hs175Rate), h(report.hs175Hours), fcfa(pay.hs175Amount)],
+    ['0850', 'MONTANT DES HS 200%', fcfa2(pay.hs200Rate), h(report.hs200Hours), fcfa(pay.hs200Amount)],
   ]
 }
 
@@ -22,10 +23,9 @@ export function exportReportPdf(report: PeriodReport, pay: PayBreakdown) {
   doc.text('Rapport heures supplémentaires', 14, 16)
   doc.setFontSize(10)
   doc.text(`Période : ${report.period.label}`, 14, 23)
-  doc.text(`Taux horaire de base : ${fcfa(pay.tauxHoraire)}/h`, 14, 29)
 
   autoTable(doc, {
-    startY: 34,
+    startY: 30,
     head: [['Code', 'Libellé', 'Base', 'Heures', 'Montant']],
     body: reportRows(report, pay),
     styles: { fontSize: 9 },
@@ -53,13 +53,12 @@ export function exportReportExcel(report: PeriodReport, pay: PayBreakdown) {
   const summarySheet = XLSX.utils.aoa_to_sheet([
     ['Rapport heures supplémentaires'],
     ['Période', report.period.label],
-    ['Taux horaire de base (FCFA/h)', Math.round(pay.tauxHoraire)],
     [],
     ['Code', 'Libellé', 'Base (FCFA/h)', 'Heures', 'Montant (FCFA)'],
-    ['0820', 'MONTANT DES HS 115%', Math.round(pay.hs115Rate), report.hs115Hours, Math.round(pay.hs115Amount)],
-    ['0830', 'MONTANT DES HS 150%', Math.round(pay.hs150Rate), report.hs150Hours, Math.round(pay.hs150Amount)],
-    ['0840', 'MONTANT DES HS 175%', Math.round(pay.hs175Rate), report.hs175Hours, Math.round(pay.hs175Amount)],
-    ['0850', 'MONTANT DES HS 200%', Math.round(pay.hs200Rate), report.hs200Hours, Math.round(pay.hs200Amount)],
+    ['0820', 'MONTANT DES HS 115%', pay.hs115Rate, report.hs115Hours, Math.round(pay.hs115Amount)],
+    ['0830', 'MONTANT DES HS 150%', pay.hs150Rate, report.hs150Hours, Math.round(pay.hs150Amount)],
+    ['0840', 'MONTANT DES HS 175%', pay.hs175Rate, report.hs175Hours, Math.round(pay.hs175Amount)],
+    ['0850', 'MONTANT DES HS 200%', pay.hs200Rate, report.hs200Hours, Math.round(pay.hs200Amount)],
     [],
     ['Salaire de base', '', '', '', Math.round(pay.baseAmount)],
     ['Total suppléments', '', '', '', Math.round(pay.totalSupplements)],
@@ -90,7 +89,6 @@ export function exportComparatifPdf(report: PeriodReport, pay: PayBreakdown, pai
   doc.text('Comparatif heures supplémentaires — payé vs dû', 14, 16)
   doc.setFontSize(10)
   doc.text(`Période : ${report.period.label}`, 14, 23)
-  doc.text(`Taux horaire de base : ${fcfa(pay.tauxHoraire)}/h`, 14, 29)
 
   const specs: { code: string; label: string; heuresDue: number; baseDue: number; montantDue: number; paidKey: keyof PaidAmounts }[] = [
     { code: '0820', label: 'HS 115%', heuresDue: report.hs115Hours, baseDue: pay.hs115Rate, montantDue: pay.hs115Amount, paidKey: 'hs115' },
@@ -105,10 +103,10 @@ export function exportComparatifPdf(report: PeriodReport, pay: PayBreakdown, pai
       s.code,
       s.label,
       h(s.heuresDue),
-      fcfa(s.baseDue),
+      fcfa2(s.baseDue),
       fcfa(s.montantDue),
       h(paid[s.paidKey].heures),
-      fcfa(paid[s.paidKey].taux),
+      fcfa2(paid[s.paidKey].taux),
       fcfa(montantPaye),
       fcfa(montantPaye - s.montantDue),
     ]
@@ -117,7 +115,7 @@ export function exportComparatifPdf(report: PeriodReport, pay: PayBreakdown, pai
   const totalPaid = specs.reduce((sum, s) => sum + paidMontant(paid, s.paidKey), 0)
 
   autoTable(doc, {
-    startY: 34,
+    startY: 30,
     head: [['Code', 'Libellé', 'H. dues', 'Base dû', 'Montant dû', 'H. payées', 'Base payé', 'Montant payé', 'Écart']],
     body: rows,
     foot: [['', 'Total', '', '', fcfa(totalDue), '', '', fcfa(totalPaid), fcfa(totalPaid - totalDue)]],
@@ -150,7 +148,6 @@ export function exportComparatifExcel(report: PeriodReport, pay: PayBreakdown, p
   const sheet = XLSX.utils.aoa_to_sheet([
     ['Comparatif heures supplémentaires — payé vs dû'],
     ['Période', report.period.label],
-    ['Taux horaire de base (FCFA/h)', Math.round(pay.tauxHoraire)],
     [],
     ['Code', 'Libellé', 'Heures dues', 'Base dû', 'Montant dû', 'Heures payées', 'Base payé', 'Montant payé', 'Écart'],
     ...specs.map((s) => {
@@ -159,10 +156,10 @@ export function exportComparatifExcel(report: PeriodReport, pay: PayBreakdown, p
         s.code,
         s.label,
         s.heuresDue,
-        Math.round(s.baseDue),
+        s.baseDue,
         Math.round(s.montantDue),
         paid[s.paidKey].heures,
-        Math.round(paid[s.paidKey].taux),
+        paid[s.paidKey].taux,
         Math.round(montantPaye),
         Math.round(montantPaye - s.montantDue),
       ]

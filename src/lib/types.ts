@@ -32,8 +32,8 @@ export interface Holiday {
   label: string
 }
 
-// Multiplicateurs appliqués au taux horaire de base pour chaque palier de
-// majoration (ex: 115 -> ×1.15). Éditables au cas où la loi ou la
+// Pourcentages de majoration par palier, affichés comme référence et pour
+// suggérer une base à partir du salaire. Éditables au cas où la loi ou la
 // convention collective change.
 export interface HsRates {
   r115: number
@@ -42,10 +42,20 @@ export interface HsRates {
   r200: number
 }
 
+// Bases horaires chargées (FCFA/h) réellement utilisées pour calculer les
+// montants dus, une par palier — comme les colonnes "Base" du bulletin de
+// paie (ex: 2838,46 pour HS 115%).
+export interface HsBases {
+  r115: number
+  r150: number
+  r175: number
+  r200: number
+}
+
 export interface Settings {
   salaireBase: number // FCFA / mois
-  tauxHoraire: number // FCFA / heure, utilisé pour tous les calculs "dû"
   hsRates: HsRates
+  hsBases: HsBases
   holidays: Holiday[]
   payPeriodStartDay: number // jour du mois où démarre la période de paie (ex: 16)
 }

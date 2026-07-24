@@ -14,7 +14,7 @@
 // Cela évite de compter deux fois la base d'une heure qui serait à la fois
 // heure supp hebdomadaire et heure de nuit, par exemple.
 import { SHIFTS, shiftDurationHours, toMinutes } from './shiftDefs'
-import type { HsRates, Planning } from './types'
+import type { HsBases, Planning } from './types'
 import { addDaysKey, compareDateKeys, formatDateKey, isSundayKey, mondayOfWeek, parseDateKey } from './dateUtils'
 
 const NIGHT_START = 21 * 60 // 21h
@@ -226,7 +226,6 @@ export function computePeriodReport(planning: Planning, holidays: Set<string>, p
 export const LEGAL_MONTHLY_HOURS = (40 * 52) / 12
 
 export interface PayBreakdown {
-  tauxHoraire: number
   baseAmount: number
   hs115Rate: number
   hs150Rate: number
@@ -240,28 +239,19 @@ export interface PayBreakdown {
   totalPay: number
 }
 
-export function computePay(
-  report: PeriodReport,
-  tauxHoraire: number,
-  salaireBase: number,
-  hsRates: HsRates,
-): PayBreakdown {
-  const hs115Rate = tauxHoraire * (hsRates.r115 / 100)
-  const hs150Rate = tauxHoraire * (hsRates.r150 / 100)
-  const hs175Rate = tauxHoraire * (hsRates.r175 / 100)
-  const hs200Rate = tauxHoraire * (hsRates.r200 / 100)
-  const hs115Amount = report.hs115Hours * hs115Rate
-  const hs150Amount = report.hs150Hours * hs150Rate
-  const hs175Amount = report.hs175Hours * hs175Rate
-  const hs200Amount = report.hs200Hours * hs200Rate
+/** hsBases : base horaire chargée (FCFA/h) par palier, telle que lue sur le bulletin de paie. */
+export function computePay(report: PeriodReport, hsBases: HsBases, salaireBase: number): PayBreakdown {
+  const hs115Amount = report.hs115Hours * hsBases.r115
+  const hs150Amount = report.hs150Hours * hsBases.r150
+  const hs175Amount = report.hs175Hours * hsBases.r175
+  const hs200Amount = report.hs200Hours * hsBases.r200
   const totalSupplements = hs115Amount + hs150Amount + hs175Amount + hs200Amount
   return {
-    tauxHoraire,
     baseAmount: salaireBase,
-    hs115Rate,
-    hs150Rate,
-    hs175Rate,
-    hs200Rate,
+    hs115Rate: hsBases.r115,
+    hs150Rate: hsBases.r150,
+    hs175Rate: hsBases.r175,
+    hs200Rate: hsBases.r200,
     hs115Amount,
     hs150Amount,
     hs175Amount,

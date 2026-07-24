@@ -17,8 +17,9 @@ export const DEFAULT_HOLIDAYS: Holiday[] = [
 
 export const DEFAULT_SETTINGS: Settings = {
   salaireBase: 0,
-  tauxHoraire: 0,
   hsRates: { r115: 115, r150: 150, r175: 175, r200: 200 },
+  // Bases horaires chargées (FCFA/h) telles que lues sur le bulletin de paie.
+  hsBases: { r115: 2838.46, r150: 3702.34, r175: 4319.4, r200: 0 },
   holidays: DEFAULT_HOLIDAYS,
   payPeriodStartDay: 16,
 }
@@ -36,6 +37,7 @@ export function loadData(): AppData {
         ...DEFAULT_SETTINGS,
         ...parsed.settings,
         hsRates: { ...DEFAULT_SETTINGS.hsRates, ...parsed.settings?.hsRates },
+        hsBases: { ...DEFAULT_SETTINGS.hsBases, ...parsed.settings?.hsBases },
       },
       paidByPeriod: Object.fromEntries(
         Object.entries(parsed.paidByPeriod ?? {}).map(([period, amounts]) => [
