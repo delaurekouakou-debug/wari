@@ -31,7 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
   overtimeMode: 'cycle',
   cycleDays: 6,
   cycleAnchor: formatDateKey(new Date()),
-  normalWeeklyHours: 42,
+  normalWeeklyHours: 40,
 }
 
 const EMPTY_PAID_LINE = { heures: 0, taux: 0 }
