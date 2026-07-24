@@ -46,7 +46,7 @@ interface DayDetail {
 
 function motifFor(d: DayDetail): string {
   const reasons: string[] = []
-  if (d.hs115 > 0 || d.hs150 > 0) reasons.push('Heures supp hebdomadaires (>40h/46h)')
+  if (d.hs115 > 0 || d.hs150 > 0) reasons.push('Heures supp (seuil hebdomadaire/cycle dépassé)')
   if (d.hs175 > 0) reasons.push(d.isSpecial ? 'Dimanche/férié (jour)' : 'Nuit (21h-5h)')
   if (d.hs200 > 0) reasons.push('Nuit + dimanche/férié')
   if (d.isPanier) reasons.push('Vacation de nuit (panier)')
@@ -57,7 +57,15 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
   const [period, setPeriod] = useState(() => getPayPeriod(formatDateKey(new Date()), settings.payPeriodStartDay))
 
   const holidaySet = useMemo(() => new Set(settings.holidays.map((h) => h.date)), [settings.holidays])
-  const report = useMemo(() => computePeriodReport(planning, holidaySet, period), [planning, holidaySet, period])
+  const { overtimeMode, cycleDays, cycleAnchor, normalWeeklyHours } = settings
+  const overtime = useMemo(
+    () => ({ mode: overtimeMode, cycleDays, cycleAnchor, normalWeeklyHours }),
+    [overtimeMode, cycleDays, cycleAnchor, normalWeeklyHours],
+  )
+  const report = useMemo(
+    () => computePeriodReport(planning, holidaySet, period, overtime),
+    [planning, holidaySet, period, overtime],
+  )
 
   const pay = computePay(report, settings.hsBases, settings.panierBase, settings.salaireBase)
 
@@ -94,7 +102,7 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
   const totalEcart = totalPaid - totalDue
 
   const dayDetails = useMemo<DayDetail[]>(() => {
-    const buckets = computeDayBuckets(planning, holidaySet)
+    const buckets = computeDayBuckets(planning, holidaySet, overtime.mode, overtime.cycleDays, overtime.cycleAnchor, overtime.normalWeeklyHours)
     const details: DayDetail[] = []
     for (const [date, b] of buckets) {
       if (date < period.start || date > period.end) continue
@@ -124,7 +132,7 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
     }
     details.sort((a, b) => compareDateKeys(a.date, b.date))
     return details
-  }, [planning, holidaySet, period])
+  }, [planning, holidaySet, period, overtime])
 
   return (
     <div className="space-y-6">
@@ -279,19 +287,47 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
 
       <section className="space-y-3 no-print">
         <h3 className="font-semibold">Base légale et justification — pour discussion avec les RH</h3>
+        <div className="rounded-md border border-sky-200 dark:border-sky-900 bg-sky-50 dark:bg-sky-950 p-3 text-sm space-y-1">
+          <p className="font-medium">
+            Mode de calcul actif : {settings.overtimeMode === 'cycle' ? `Cycle de travail (${settings.cycleDays} jours)` : 'Semaine civile (lundi-dimanche)'}
+          </p>
+          {settings.overtimeMode === 'cycle' ? (
+            <p className="text-gray-600 dark:text-gray-400">
+              Travail en équipes successives organisé en cycle de rotation dépassant la semaine : les seuils de
+              majoration ({settings.normalWeeklyHours}h puis +6h) sont calculés sur la durée moyenne du cycle complet
+              de {settings.cycleDays} jours, et non semaine civile par semaine civile.{' '}
+              <span className="text-gray-500">
+                Décret n°96-203 du 7 mars 1996 relatif à la durée du travail : pour le travail organisé en cycle de
+                rotation dépassant la semaine, seules les heures dépassant la durée moyenne de travail calculée sur
+                le cycle complet — plafonnée à 42h/semaine en moyenne — sont des heures supplémentaires.
+              </span>
+            </p>
+          ) : (
+            <p className="text-gray-600 dark:text-gray-400">
+              Seuils calculés semaine civile par semaine civile (lundi 00h00 à dimanche 24h00).{' '}
+              <span className="text-gray-500">
+                Si ton planning suit un cycle de rotation fixe (ex: 2 jours-2 nuits-2 repos), le Décret n°96-203
+                prévoit que le calcul se fasse sur la durée moyenne du cycle complet plutôt que semaine par semaine —
+                active le mode "Cycle de travail" dans Paramètres si c'est ton cas.
+              </span>
+            </p>
+          )}
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-md border border-gray-200 dark:border-gray-800 p-3 text-sm space-y-1">
             <p className="font-medium">HS {settings.hsRates.r115}%</p>
             <p className="text-gray-600 dark:text-gray-400">
-              Heures effectuées entre la 41e et la 46e heure de la semaine civile (lundi-dimanche), au-delà de la
-              durée légale de 40h. <span className="text-gray-500">Code du travail ivoirien (loi n°2015-532), art.
-              21 et suivants ; majoration de 15% pour les 6 premières heures supplémentaires.</span>
+              Heures effectuées entre la {settings.normalWeeklyHours + 1}e et la {settings.normalWeeklyHours + 6}e
+              heure de la {settings.overtimeMode === 'cycle' ? `période de ${settings.cycleDays} jours` : 'semaine civile (lundi-dimanche)'},
+              au-delà du seuil normal de {settings.normalWeeklyHours}h.{' '}
+              <span className="text-gray-500">Code du travail ivoirien (loi n°2015-532) et Décret n°96-203 du 7 mars
+              1996 ; majoration de 15% pour les 6 premières heures supplémentaires.</span>
             </p>
           </div>
           <div className="rounded-md border border-gray-200 dark:border-gray-800 p-3 text-sm space-y-1">
             <p className="font-medium">HS {settings.hsRates.r150}%</p>
             <p className="text-gray-600 dark:text-gray-400">
-              Heures effectuées au-delà de la 46e heure de la même semaine civile.{' '}
+              Heures effectuées au-delà de la {settings.normalWeeklyHours + 6}e heure de la même période.{' '}
               <span className="text-gray-500">Même base légale ; majoration de 50% au-delà de la 6e heure
               supplémentaire.</span>
             </p>

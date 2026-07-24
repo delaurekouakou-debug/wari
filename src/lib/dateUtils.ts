@@ -32,3 +32,18 @@ export function mondayOfWeek(key: string): string {
 export function compareDateKeys(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
 }
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000
+
+/**
+ * Date de début du cycle de `cycleDays` jours (ancré sur `anchorKey`) qui
+ * contient `dateKey`. Fonctionne aussi pour les dates antérieures à
+ * l'ancre (pavage régulier dans les deux sens).
+ */
+export function cycleStartKey(dateKey: string, anchorKey: string, cycleDays: number): string {
+  const date = parseDateKey(dateKey)
+  const anchor = parseDateKey(anchorKey)
+  const diffDays = Math.round((date.getTime() - anchor.getTime()) / MS_PER_DAY)
+  const cycleIndex = Math.floor(diffDays / cycleDays)
+  return addDaysKey(anchorKey, cycleIndex * cycleDays)
+}

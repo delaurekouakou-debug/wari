@@ -1,4 +1,5 @@
 import type { AppData, Holiday, Settings } from './types'
+import { formatDateKey } from './dateUtils'
 
 const STORAGE_KEY = 'overtime-ci:data'
 
@@ -23,6 +24,14 @@ export const DEFAULT_SETTINGS: Settings = {
   panierBase: 1298,
   holidays: DEFAULT_HOLIDAYS,
   payPeriodStartDay: 16,
+  // Décret n°96-203 du 7 mars 1996 : travail en équipes successives organisé
+  // en cycle de rotation dépassant la semaine -> seules les heures
+  // dépassant la durée moyenne calculée sur le cycle complet sont des
+  // heures supp. cycleDays/cycleAnchor sont à ajuster au cycle réel.
+  overtimeMode: 'cycle',
+  cycleDays: 6,
+  cycleAnchor: formatDateKey(new Date()),
+  normalWeeklyHours: 42,
 }
 
 const EMPTY_PAID_LINE = { heures: 0, taux: 0 }

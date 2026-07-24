@@ -1,21 +1,37 @@
 // Moteur de calcul des heures supplémentaires selon le Code du travail
-// ivoirien (2015) et le Décret n°96-204 du 7 mars 1996 relatif au travail
-// de nuit :
-//   - durée légale : 40h / semaine
+// ivoirien (2015) et les décrets n°96-203 (durée du travail) et n°96-204
+// (travail de nuit) du 7 mars 1996 :
+//   - durée légale : 40h / semaine (régime "semaine civile")
 //   - heures supp   : +15% de la 41e à la 46e heure, +50% au-delà
 //   - heures de nuit (21h-5h) : +75%
 //   - dimanche / jour férié (jour) : +75%
 //   - dimanche / jour férié (nuit) : +100%
+//
+// Régime "cycle de travail" (Décret n°96-203, dispositions sur le travail
+// en équipes successives organisé en cycle de rotation dépassant la
+// semaine) : seules les heures dépassant la durée moyenne calculée sur le
+// cycle complet — plafonnée à 42h/semaine en moyenne — sont des heures
+// supplémentaires, plutôt qu'un découpage semaine civile par semaine
+// civile qui produirait des résultats erratiques selon l'alignement
+// arbitraire du cycle avec le calendrier.
 //
 // Chaque heure travaillée est classée dans un seul palier de paiement (le
 // plus favorable parmi ceux applicables), à l'image du bulletin de paie
 // réel : "MONTANT DES HS 115%", "150%", "175%"... exprimés en taux plein
 // (heures × taux horaire × multiplicateur), et non en supplément cumulé.
 // Cela évite de compter deux fois la base d'une heure qui serait à la fois
-// heure supp hebdomadaire et heure de nuit, par exemple.
+// heure supp hebdomadaire/cycle et heure de nuit, par exemple.
 import { SHIFTS, shiftDurationHours, toMinutes } from './shiftDefs'
-import type { HsBases, Planning, ShiftKey } from './types'
-import { addDaysKey, compareDateKeys, formatDateKey, isSundayKey, mondayOfWeek, parseDateKey } from './dateUtils'
+import type { HsBases, OvertimeMode, Planning, ShiftKey } from './types'
+import {
+  addDaysKey,
+  compareDateKeys,
+  cycleStartKey,
+  formatDateKey,
+  isSundayKey,
+  mondayOfWeek,
+  parseDateKey,
+} from './dateUtils'
 
 // Vacations donnant droit à la prime de panier (indemnité de repas pour le
 // travail de nuit) : une occurrence par jour où l'une de ces vacations est
@@ -24,8 +40,20 @@ export const PANIER_SHIFT_KEYS: ShiftKey[] = ['M12_NUIT', 'M8_NUIT']
 
 const NIGHT_START = 21 * 60 // 21h
 const NIGHT_END = 5 * 60 // 5h (jour suivant)
-const WEEK_TIER1_START = 40 // 41e heure
-const WEEK_TIER2_START = 46 // au-delà de la 46e heure
+const TIER_BRACKET_HOURS = 6 // largeur de la tranche à +15% (41e-46e heure), mise à l'échelle de la période
+
+function referencePeriodStart(
+  dateKey: string,
+  mode: OvertimeMode,
+  cycleDays: number,
+  cycleAnchor: string,
+): string {
+  return mode === 'cycle' ? cycleStartKey(dateKey, cycleAnchor, cycleDays) : mondayOfWeek(dateKey)
+}
+
+function referencePeriodLength(mode: OvertimeMode, cycleDays: number): number {
+  return mode === 'cycle' ? Math.max(1, cycleDays) : 7
+}
 
 export type HsRate = 0 | 0.15 | 0.5 | 0.75 | 1
 
@@ -54,8 +82,9 @@ function addRate(buckets: HourBuckets, rate: HsRate, hours: number) {
  * Découpe un segment (une portion de vacation sur une seule journée
  * calendaire) en sous-intervalles homogènes du point de vue de la
  * majoration applicable, à partir des points de coupure "heure de nuit"
- * (21h/5h) et "seuil hebdomadaire" (40h/46h), puis classe chaque
- * sous-intervalle sur le taux le plus favorable.
+ * (21h/5h) et "seuil de la période de référence" (tier1Start/tier2Start,
+ * en heures cumulées depuis le début de la semaine ou du cycle), puis
+ * classe chaque sous-intervalle sur le taux le plus favorable.
  */
 function classifySegment(
   date: string,
@@ -63,6 +92,8 @@ function classifySegment(
   endMin: number,
   cumStart: number,
   isSpecialDay: boolean,
+  tier1Start: number,
+  tier2Start: number,
   byDate: Map<string, HourBuckets>,
 ): number {
   const duration = (endMin - startMin) / 60
@@ -73,9 +104,9 @@ function classifySegment(
   for (const boundary of [NIGHT_END, NIGHT_START]) {
     if (boundary > startMin && boundary < endMin) cuts.add(boundary)
   }
-  for (const weekBoundary of [WEEK_TIER1_START, WEEK_TIER2_START]) {
-    if (weekBoundary > cumStart && weekBoundary < cumEnd) {
-      const minuteOffset = startMin + (weekBoundary - cumStart) * 60
+  for (const tierBoundary of [tier1Start, tier2Start]) {
+    if (tierBoundary > cumStart && tierBoundary < cumEnd) {
+      const minuteOffset = startMin + (tierBoundary - cumStart) * 60
       cuts.add(minuteOffset)
     }
   }
@@ -95,7 +126,7 @@ function classifySegment(
     const mid = (a + b) / 2
     const isNight = mid >= NIGHT_START || mid < NIGHT_END
     const cumMid = cumStart + (mid - startMin) / 60
-    const tierRate: HsRate = cumMid < WEEK_TIER1_START ? 0 : cumMid < WEEK_TIER2_START ? 0.15 : 0.5
+    const tierRate: HsRate = cumMid < tier1Start ? 0 : cumMid < tier2Start ? 0.15 : 0.5
     const specialRate: HsRate = isSpecialDay ? (isNight ? 1 : 0.75) : isNight ? 0.75 : 0
     const rate: HsRate = tierRate > specialRate ? tierRate : specialRate
     addRate(bucket, rate, d)
@@ -104,18 +135,30 @@ function classifySegment(
   return cumEnd
 }
 
-export function computeDayBuckets(planning: Planning, holidays: Set<string>): Map<string, HourBuckets> {
+export function computeDayBuckets(
+  planning: Planning,
+  holidays: Set<string>,
+  mode: OvertimeMode,
+  cycleDays: number,
+  cycleAnchor: string,
+  normalWeeklyHours: number,
+): Map<string, HourBuckets> {
   const byDate = new Map<string, HourBuckets>()
 
-  const weeks = new Map<string, string[]>()
+  const periodLength = referencePeriodLength(mode, cycleDays)
+  const scale = periodLength / 7
+  const tier1Start = normalWeeklyHours * scale
+  const tier2Start = tier1Start + TIER_BRACKET_HOURS * scale
+
+  const periods = new Map<string, string[]>()
   for (const [dateKey, shiftKey] of Object.entries(planning)) {
     if (shiftDurationHours(shiftKey) <= 0) continue
-    const wk = mondayOfWeek(dateKey)
-    if (!weeks.has(wk)) weeks.set(wk, [])
-    weeks.get(wk)!.push(dateKey)
+    const pk = referencePeriodStart(dateKey, mode, cycleDays, cycleAnchor)
+    if (!periods.has(pk)) periods.set(pk, [])
+    periods.get(pk)!.push(dateKey)
   }
 
-  for (const dateKeys of weeks.values()) {
+  for (const dateKeys of periods.values()) {
     dateKeys.sort(compareDateKeys)
     let cum = 0
     for (const dateKey of dateKeys) {
@@ -126,12 +169,30 @@ export function computeDayBuckets(planning: Planning, holidays: Set<string>): Ma
       if (def.crossesMidnight) endMin += 1440
 
       const seg1End = Math.min(endMin, 1440)
-      cum = classifySegment(dateKey, startMin, seg1End, cum, isSundayKey(dateKey) || holidays.has(dateKey), byDate)
+      cum = classifySegment(
+        dateKey,
+        startMin,
+        seg1End,
+        cum,
+        isSundayKey(dateKey) || holidays.has(dateKey),
+        tier1Start,
+        tier2Start,
+        byDate,
+      )
 
       if (def.crossesMidnight) {
         const nextDate = addDaysKey(dateKey, 1)
         const seg2End = endMin - 1440
-        cum = classifySegment(nextDate, 0, seg2End, cum, isSundayKey(nextDate) || holidays.has(nextDate), byDate)
+        cum = classifySegment(
+          nextDate,
+          0,
+          seg2End,
+          cum,
+          isSundayKey(nextDate) || holidays.has(nextDate),
+          tier1Start,
+          tier2Start,
+          byDate,
+        )
       }
     }
   }
@@ -139,25 +200,31 @@ export function computeDayBuckets(planning: Planning, holidays: Set<string>): Ma
   return byDate
 }
 
-export interface WeekBreakdown {
-  weekStart: string
-  weekEnd: string
+export interface ReferencePeriodBreakdown {
+  periodStart: string
+  periodEnd: string
   totalHours: number
 }
 
-export function computeWeeklyBreakdown(planning: Planning): WeekBreakdown[] {
+export function computeReferenceBreakdown(
+  planning: Planning,
+  mode: OvertimeMode,
+  cycleDays: number,
+  cycleAnchor: string,
+): ReferencePeriodBreakdown[] {
+  const periodLength = referencePeriodLength(mode, cycleDays)
   const totals = new Map<string, number>()
   for (const [dateKey, shiftKey] of Object.entries(planning)) {
     const hours = shiftDurationHours(shiftKey)
     if (hours <= 0) continue
-    const wk = mondayOfWeek(dateKey)
-    totals.set(wk, (totals.get(wk) ?? 0) + hours)
+    const pk = referencePeriodStart(dateKey, mode, cycleDays, cycleAnchor)
+    totals.set(pk, (totals.get(pk) ?? 0) + hours)
   }
-  const result: WeekBreakdown[] = []
-  for (const [weekStart, totalHours] of totals) {
-    result.push({ weekStart, weekEnd: addDaysKey(weekStart, 6), totalHours })
+  const result: ReferencePeriodBreakdown[] = []
+  for (const [periodStart, totalHours] of totals) {
+    result.push({ periodStart, periodEnd: addDaysKey(periodStart, periodLength - 1), totalHours })
   }
-  result.sort((a, b) => compareDateKeys(a.weekStart, b.weekStart))
+  result.sort((a, b) => compareDateKeys(a.periodStart, b.periodStart))
   return result
 }
 
@@ -187,6 +254,13 @@ export function shiftPayPeriod(period: PayPeriod, deltaMonths: number, startDay:
   return getPayPeriod(formatDateKey(mid), startDay)
 }
 
+export interface OvertimeConfig {
+  mode: OvertimeMode
+  cycleDays: number
+  cycleAnchor: string
+  normalWeeklyHours: number
+}
+
 export interface PeriodReport {
   period: PayPeriod
   totalHours: number
@@ -196,11 +270,23 @@ export interface PeriodReport {
   hs175Hours: number
   hs200Hours: number
   panierCount: number
-  weeks: WeekBreakdown[]
+  periods: ReferencePeriodBreakdown[]
 }
 
-export function computePeriodReport(planning: Planning, holidays: Set<string>, period: PayPeriod): PeriodReport {
-  const dayBuckets = computeDayBuckets(planning, holidays)
+export function computePeriodReport(
+  planning: Planning,
+  holidays: Set<string>,
+  period: PayPeriod,
+  overtime: OvertimeConfig,
+): PeriodReport {
+  const dayBuckets = computeDayBuckets(
+    planning,
+    holidays,
+    overtime.mode,
+    overtime.cycleDays,
+    overtime.cycleAnchor,
+    overtime.normalWeeklyHours,
+  )
   const totals = emptyBuckets()
   for (const [date, buckets] of dayBuckets) {
     if (date < period.start || date > period.end) continue
@@ -213,8 +299,8 @@ export function computePeriodReport(planning: Planning, holidays: Set<string>, p
 
   const totalHours = totals.normalHours + totals.hs115Hours + totals.hs150Hours + totals.hs175Hours + totals.hs200Hours
 
-  const allWeeks = computeWeeklyBreakdown(planning)
-  const weeksInPeriod = allWeeks.filter((w) => w.weekEnd >= period.start && w.weekStart <= period.end)
+  const allPeriods = computeReferenceBreakdown(planning, overtime.mode, overtime.cycleDays, overtime.cycleAnchor)
+  const periodsInRange = allPeriods.filter((p) => p.periodEnd >= period.start && p.periodStart <= period.end)
 
   let panierCount = 0
   for (const [dateKey, shiftKey] of Object.entries(planning)) {
@@ -231,7 +317,7 @@ export function computePeriodReport(planning: Planning, holidays: Set<string>, p
     hs175Hours: totals.hs175Hours,
     hs200Hours: totals.hs200Hours,
     panierCount,
-    weeks: weeksInPeriod,
+    periods: periodsInRange,
   }
 }
 

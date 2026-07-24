@@ -64,10 +64,10 @@ export function exportReportExcel(report: PeriodReport, pay: PayBreakdown) {
   ])
 
   const weeksSheet = XLSX.utils.json_to_sheet(
-    report.weeks.map((w) => ({
-      'Semaine du': w.weekStart,
-      au: w.weekEnd,
-      'Total heures': w.totalHours,
+    report.periods.map((p) => ({
+      'Période du': p.periodStart,
+      au: p.periodEnd,
+      'Total heures': p.totalHours,
     })),
   )
 

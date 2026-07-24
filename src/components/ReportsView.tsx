@@ -17,7 +17,15 @@ export default function ReportsView({ planning, settings }: Props) {
   const [period, setPeriod] = useState(() => getPayPeriod(formatDateKey(new Date()), settings.payPeriodStartDay))
 
   const holidaySet = useMemo(() => new Set(settings.holidays.map((h) => h.date)), [settings.holidays])
-  const report = useMemo(() => computePeriodReport(planning, holidaySet, period), [planning, holidaySet, period])
+  const { overtimeMode, cycleDays, cycleAnchor, normalWeeklyHours } = settings
+  const overtime = useMemo(
+    () => ({ mode: overtimeMode, cycleDays, cycleAnchor, normalWeeklyHours }),
+    [overtimeMode, cycleDays, cycleAnchor, normalWeeklyHours],
+  )
+  const report = useMemo(
+    () => computePeriodReport(planning, holidaySet, period, overtime),
+    [planning, holidaySet, period, overtime],
+  )
 
   const pay = computePay(report, settings.hsBases, settings.panierBase, settings.salaireBase)
   const hasBases = settings.hsBases.r115 > 0 || settings.hsBases.r150 > 0 || settings.hsBases.r175 > 0 || settings.hsBases.r200 > 0
@@ -109,28 +117,30 @@ export default function ReportsView({ planning, settings }: Props) {
       </div>
 
       <div>
-        <h3 className="font-semibold mb-2">Détail par semaine</h3>
+        <h3 className="font-semibold mb-2">
+          {settings.overtimeMode === 'cycle' ? `Détail par cycle (${settings.cycleDays}j)` : 'Détail par semaine'}
+        </h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-gray-300 dark:border-gray-700 text-left">
-                <th className="py-1.5 pr-3">Semaine</th>
+                <th className="py-1.5 pr-3">{settings.overtimeMode === 'cycle' ? 'Cycle' : 'Semaine'}</th>
                 <th className="py-1.5 pr-3">Total heures</th>
               </tr>
             </thead>
             <tbody>
-              {report.weeks.map((w) => (
-                <tr key={w.weekStart} className="border-b border-gray-100 dark:border-gray-800">
+              {report.periods.map((p) => (
+                <tr key={p.periodStart} className="border-b border-gray-100 dark:border-gray-800">
                   <td className="py-1 pr-3">
-                    {w.weekStart} — {w.weekEnd}
+                    {p.periodStart} — {p.periodEnd}
                   </td>
-                  <td className="py-1 pr-3">{hrs(w.totalHours)}</td>
+                  <td className="py-1 pr-3">{hrs(p.totalHours)}</td>
                 </tr>
               ))}
-              {report.weeks.length === 0 && (
+              {report.periods.length === 0 && (
                 <tr>
                   <td colSpan={2} className="py-3 text-center text-gray-500">
-                    Aucune semaine sur cette période
+                    Aucune période sur cet intervalle
                   </td>
                 </tr>
               )}
@@ -140,9 +150,11 @@ export default function ReportsView({ planning, settings }: Props) {
       </div>
 
       <p className="text-xs text-gray-500">
-        Base légale : Code du travail ivoirien (2015) — durée légale 40h/semaine — et Décret n°96-204 du 7 mars 1996
+        Base légale : Code du travail ivoirien (2015) et Décret n°96-203 du 7 mars 1996 relatif à la durée du
+        travail — durée légale 40h/semaine, ou durée moyenne calculée sur le cycle de travail complet (plafond
+        42h/semaine) pour le travail en équipes successives organisé en cycle — et Décret n°96-204 du 7 mars 1996
         relatif au travail de nuit. Chaque heure travaillée est classée sur un seul palier (le plus favorable parmi
-        seuil hebdomadaire 40h/46h, nuit 21h-5h, dimanche/férié), à l'image du bulletin de paie.
+        seuil hebdomadaire/cycle, nuit 21h-5h, dimanche/férié), à l'image du bulletin de paie.
       </p>
     </div>
   )

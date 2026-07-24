@@ -52,6 +52,14 @@ export interface HsBases {
   r200: number
 }
 
+// "semaine" : seuil hebdomadaire calculé semaine civile par semaine civile
+// (lundi-dimanche) — régime de droit commun.
+// "cycle" : pour le travail en équipes successives organisé en cycle de
+// rotation dépassant la semaine, seules les heures dépassant la durée
+// moyenne calculée sur le cycle complet sont des heures supp (Décret
+// n°96-203 du 7 mars 1996, art. relatif aux cycles de travail).
+export type OvertimeMode = 'semaine' | 'cycle'
+
 export interface Settings {
   salaireBase: number // FCFA / mois
   hsRates: HsRates
@@ -59,6 +67,10 @@ export interface Settings {
   panierBase: number // FCFA par vacation de nuit (indemnité de panier)
   holidays: Holiday[]
   payPeriodStartDay: number // jour du mois où démarre la période de paie (ex: 16)
+  overtimeMode: OvertimeMode
+  cycleDays: number // longueur du cycle de rotation en jours (ex: 6 ou 8)
+  cycleAnchor: string // date (YYYY-MM-DD) marquant le début d'un cycle de référence
+  normalWeeklyHours: number // seuil hebdomadaire moyen normal avant majoration (40 en semaine civile, jusqu'à 42 en cycle continu)
 }
 
 // Une ligne "Nombre × Base = Montant", comme sur le bulletin de paie. Pour

@@ -65,6 +65,83 @@ export default function SettingsView({ settings, onChange }: Props) {
       </section>
 
       <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Méthode de calcul des heures supplémentaires</h2>
+        <p className="text-xs text-gray-500">
+          Décret n°96-203 du 7 mars 1996 : le travail en équipes successives organisé en cycle de rotation dépassant
+          la semaine (ex: 2 jours-2 nuits-2 repos) peut être calculé sur la durée moyenne du cycle complet — plutôt
+          que semaine civile par semaine civile, ce qui évite des résultats erratiques selon l'alignement arbitraire
+          du cycle avec le calendrier.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="overtimeMode"
+              checked={settings.overtimeMode === 'semaine'}
+              onChange={() => update('overtimeMode', 'semaine')}
+            />
+            Semaine civile (lundi-dimanche)
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="overtimeMode"
+              checked={settings.overtimeMode === 'cycle'}
+              onChange={() => update('overtimeMode', 'cycle')}
+            />
+            Cycle de travail
+          </label>
+        </div>
+        {settings.overtimeMode === 'cycle' && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-xl">
+            <label className="text-sm">
+              Longueur du cycle (jours)
+              <input
+                type="number"
+                min={1}
+                value={settings.cycleDays}
+                onChange={(e) => update('cycleDays', Number(e.target.value) || 1)}
+                className="mt-1 w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5"
+              />
+              <span className="block text-xs text-gray-500 mt-1">6 pour le programme 12h, 8 pour le programme 8h.</span>
+            </label>
+            <label className="text-sm">
+              Date de référence (début d'un cycle)
+              <input
+                type="date"
+                value={settings.cycleAnchor}
+                onChange={(e) => update('cycleAnchor', e.target.value)}
+                className="mt-1 w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5"
+              />
+            </label>
+            <label className="text-sm">
+              Seuil normal (h/semaine équivalent)
+              <input
+                type="number"
+                min={1}
+                value={settings.normalWeeklyHours}
+                onChange={(e) => update('normalWeeklyHours', Number(e.target.value) || 1)}
+                className="mt-1 w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5"
+              />
+              <span className="block text-xs text-gray-500 mt-1">40 en général, jusqu'à 42 pour le cycle continu (Décret n°96-203).</span>
+            </label>
+          </div>
+        )}
+        {settings.overtimeMode === 'semaine' && (
+          <label className="block text-sm max-w-xs">
+            Seuil normal (h/semaine)
+            <input
+              type="number"
+              min={1}
+              value={settings.normalWeeklyHours}
+              onChange={(e) => update('normalWeeklyHours', Number(e.target.value) || 1)}
+              className="mt-1 w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5"
+            />
+          </label>
+        )}
+      </section>
+
+      <section className="space-y-3">
         <h2 className="text-lg font-semibold">Majorations heures supplémentaires</h2>
         <p className="text-xs text-gray-500">
           Pour chaque palier : le pourcentage (référence légale, éditable) et la <strong>base</strong> — le taux
@@ -74,8 +151,8 @@ export default function SettingsView({ settings, onChange }: Props) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {(
             [
-              ['r115', "41e-46e h/semaine"],
-              ['r150', 'au-delà de la 46e h/semaine'],
+              ['r115', `${settings.normalWeeklyHours + 1}e-${settings.normalWeeklyHours + 6}e h`],
+              ['r150', `au-delà de la ${settings.normalWeeklyHours + 6}e h`],
               ['r175', 'nuit ou dimanche/férié jour'],
               ['r200', 'dimanche/férié nuit'],
             ] as [keyof HsRates & keyof HsBases, string][]
