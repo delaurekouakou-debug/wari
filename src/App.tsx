@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import PlanningView from './components/PlanningView'
 import SettingsView from './components/SettingsView'
 import ReportsView from './components/ReportsView'
+import ComparatifView from './components/ComparatifView'
 import { loadData, saveData } from './lib/storage'
 import type { AppData } from './lib/types'
 
-type Tab = 'planning' | 'rapports' | 'parametres'
+type Tab = 'planning' | 'rapports' | 'comparatif' | 'parametres'
 
 export default function App() {
   const [data, setData] = useState<AppData>(() => loadData())
@@ -25,6 +26,7 @@ export default function App() {
               [
                 ['planning', 'Planning'],
                 ['rapports', 'Rapports'],
+                ['comparatif', 'Comparatif'],
                 ['parametres', 'Paramètres'],
               ] as [Tab, string][]
             ).map(([key, label]) => (
@@ -49,6 +51,14 @@ export default function App() {
           <PlanningView planning={data.planning} onChange={(planning) => setData((d) => ({ ...d, planning }))} />
         )}
         {tab === 'rapports' && <ReportsView planning={data.planning} settings={data.settings} />}
+        {tab === 'comparatif' && (
+          <ComparatifView
+            planning={data.planning}
+            settings={data.settings}
+            paidByPeriod={data.paidByPeriod}
+            onChange={(paidByPeriod) => setData((d) => ({ ...d, paidByPeriod }))}
+          />
+        )}
         {tab === 'parametres' && (
           <SettingsView settings={data.settings} onChange={(settings) => setData((d) => ({ ...d, settings }))} />
         )}

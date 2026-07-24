@@ -2,18 +2,17 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
 import type { PayBreakdown, PeriodReport } from './calcEngine'
+import type { PaidAmounts } from './types'
 
 const fcfa = (n: number) => `${Math.round(n).toLocaleString('fr-FR')} FCFA`
 const h = (n: number) => `${n.toFixed(2)} h`
 
-function reportRows(report: PeriodReport, pay: PayBreakdown): [string, string, string][] {
+function reportRows(report: PeriodReport, pay: PayBreakdown): [string, string, string, string][] {
   return [
-    ['Heures totales travaillées', h(report.totalHours), ''],
-    ['Heures supp 15% (41e-46e h/semaine)', h(report.tier1Hours), fcfa(pay.tier1Amount)],
-    ['Heures supp 50% (au-delà 46e h/semaine)', h(report.tier2Hours), fcfa(pay.tier2Amount)],
-    ['Heures de nuit (21h-5h, +75%)', h(report.nightHours), fcfa(pay.nightAmount)],
-    ['Dimanche / férié jour (+75%)', h(report.sundayHolidayDayHours), fcfa(pay.sundayDayAmount)],
-    ['Dimanche / férié nuit (+100%)', h(report.sundayHolidayNightHours), fcfa(pay.sundayNightAmount)],
+    ['0820', 'MONTANT DES HS 115%', h(report.hs115Hours), fcfa(pay.hs115Amount)],
+    ['0830', 'MONTANT DES HS 150%', h(report.hs150Hours), fcfa(pay.hs150Amount)],
+    ['0840', 'MONTANT DES HS 175%', h(report.hs175Hours), fcfa(pay.hs175Amount)],
+    ['0850', 'MONTANT DES HS 200%', h(report.hs200Hours), fcfa(pay.hs200Amount)],
   ]
 }
 
@@ -27,7 +26,7 @@ export function exportReportPdf(report: PeriodReport, pay: PayBreakdown) {
 
   autoTable(doc, {
     startY: 34,
-    head: [['Catégorie', 'Heures', 'Montant']],
+    head: [['Code', 'Libellé', 'Heures', 'Montant']],
     body: reportRows(report, pay),
     styles: { fontSize: 9 },
     headStyles: { fillColor: [16, 128, 88] },
@@ -56,13 +55,11 @@ export function exportReportExcel(report: PeriodReport, pay: PayBreakdown) {
     ['Période', report.period.label],
     ['Taux horaire utilisé (FCFA/h)', Math.round(pay.tauxHoraire)],
     [],
-    ['Catégorie', 'Heures', 'Montant (FCFA)'],
-    ['Heures totales travaillées', report.totalHours, ''],
-    ['Heures supp 15% (41e-46e h/semaine)', report.tier1Hours, Math.round(pay.tier1Amount)],
-    ['Heures supp 50% (au-delà 46e h/semaine)', report.tier2Hours, Math.round(pay.tier2Amount)],
-    ['Heures de nuit (+75%)', report.nightHours, Math.round(pay.nightAmount)],
-    ['Dimanche/férié jour (+75%)', report.sundayHolidayDayHours, Math.round(pay.sundayDayAmount)],
-    ['Dimanche/férié nuit (+100%)', report.sundayHolidayNightHours, Math.round(pay.sundayNightAmount)],
+    ['Code', 'Libellé', 'Heures', 'Montant (FCFA)'],
+    ['0820', 'MONTANT DES HS 115%', report.hs115Hours, Math.round(pay.hs115Amount)],
+    ['0830', 'MONTANT DES HS 150%', report.hs150Hours, Math.round(pay.hs150Amount)],
+    ['0840', 'MONTANT DES HS 175%', report.hs175Hours, Math.round(pay.hs175Amount)],
+    ['0850', 'MONTANT DES HS 200%', report.hs200Hours, Math.round(pay.hs200Amount)],
     [],
     ['Salaire de base', '', Math.round(pay.baseAmount)],
     ['Total suppléments', '', Math.round(pay.totalSupplements)],
@@ -74,8 +71,6 @@ export function exportReportExcel(report: PeriodReport, pay: PayBreakdown) {
       'Semaine du': w.weekStart,
       au: w.weekEnd,
       'Total heures': w.totalHours,
-      'Heures 15%': w.tier1Hours,
-      'Heures 50%': w.tier2Hours,
     })),
   )
 
@@ -83,4 +78,62 @@ export function exportReportExcel(report: PeriodReport, pay: PayBreakdown) {
   XLSX.utils.book_append_sheet(wb, summarySheet, 'Résumé')
   XLSX.utils.book_append_sheet(wb, weeksSheet, 'Détail semaines')
   XLSX.writeFile(wb, `heures-supp_${report.period.start}_${report.period.end}.xlsx`)
+}
+
+export function exportComparatifPdf(report: PeriodReport, pay: PayBreakdown, paid: PaidAmounts) {
+  const doc = new jsPDF()
+  doc.setFontSize(14)
+  doc.text('Comparatif heures supplémentaires — payé vs dû', 14, 16)
+  doc.setFontSize(10)
+  doc.text(`Période : ${report.period.label}`, 14, 23)
+  doc.text(`Taux horaire légal : ${fcfa(pay.tauxHoraire)}/h`, 14, 29)
+
+  const rows: [string, string, string, string, string][] = [
+    ['0820', 'MONTANT DES HS 115%', fcfa(pay.hs115Amount), fcfa(paid.hs115), fcfa(paid.hs115 - pay.hs115Amount)],
+    ['0830', 'MONTANT DES HS 150%', fcfa(pay.hs150Amount), fcfa(paid.hs150), fcfa(paid.hs150 - pay.hs150Amount)],
+    ['0840', 'MONTANT DES HS 175%', fcfa(pay.hs175Amount), fcfa(paid.hs175), fcfa(paid.hs175 - pay.hs175Amount)],
+    ['0850', 'MONTANT DES HS 200%', fcfa(pay.hs200Amount), fcfa(paid.hs200), fcfa(paid.hs200 - pay.hs200Amount)],
+  ]
+  const totalDu = pay.totalSupplements
+  const totalPaye = paid.hs115 + paid.hs150 + paid.hs175 + paid.hs200
+
+  autoTable(doc, {
+    startY: 34,
+    head: [['Code', 'Libellé', 'Montant dû', 'Montant payé', 'Écart']],
+    body: rows,
+    foot: [['', 'Total', fcfa(totalDu), fcfa(totalPaye), fcfa(totalPaye - totalDu)]],
+    styles: { fontSize: 9 },
+    headStyles: { fillColor: [16, 128, 88] },
+    footStyles: { fillColor: [230, 230, 230], textColor: [0, 0, 0], fontStyle: 'bold' },
+  })
+
+  doc.setFontSize(8)
+  const afterTableY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10
+  doc.text(
+    'Base légale : Code du travail ivoirien (2015) et Décret n°96-204 du 7 mars 1996 (travail de nuit). Montants payés saisis manuellement depuis le bulletin de paie.',
+    14,
+    afterTableY,
+  )
+
+  doc.save(`comparatif-hs_${report.period.start}_${report.period.end}.pdf`)
+}
+
+export function exportComparatifExcel(report: PeriodReport, pay: PayBreakdown, paid: PaidAmounts) {
+  const totalDu = pay.totalSupplements
+  const totalPaye = paid.hs115 + paid.hs150 + paid.hs175 + paid.hs200
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['Comparatif heures supplémentaires — payé vs dû'],
+    ['Période', report.period.label],
+    ['Taux horaire légal (FCFA/h)', Math.round(pay.tauxHoraire)],
+    [],
+    ['Code', 'Libellé', 'Montant dû', 'Montant payé', 'Écart'],
+    ['0820', 'MONTANT DES HS 115%', Math.round(pay.hs115Amount), Math.round(paid.hs115), Math.round(paid.hs115 - pay.hs115Amount)],
+    ['0830', 'MONTANT DES HS 150%', Math.round(pay.hs150Amount), Math.round(paid.hs150), Math.round(paid.hs150 - pay.hs150Amount)],
+    ['0840', 'MONTANT DES HS 175%', Math.round(pay.hs175Amount), Math.round(paid.hs175), Math.round(paid.hs175 - pay.hs175Amount)],
+    ['0850', 'MONTANT DES HS 200%', Math.round(pay.hs200Amount), Math.round(paid.hs200), Math.round(paid.hs200 - pay.hs200Amount)],
+    ['', 'Total', Math.round(totalDu), Math.round(totalPaye), Math.round(totalPaye - totalDu)],
+  ])
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, sheet, 'Comparatif')
+  XLSX.writeFile(wb, `comparatif-hs_${report.period.start}_${report.period.end}.xlsx`)
 }

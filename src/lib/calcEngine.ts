@@ -7,28 +7,137 @@
 //   - dimanche / jour férié (jour) : +75%
 //   - dimanche / jour férié (nuit) : +100%
 //
-// Hypothèse d'attribution : une vacation est rattachée à la semaine (lundi
-// à dimanche) de sa date de début pour le calcul du seuil de 40h, et une
-// semaine est rattachée à la période de paie qui contient son dimanche.
+// Chaque heure travaillée est classée dans un seul palier de paiement (le
+// plus favorable parmi ceux applicables), à l'image du bulletin de paie
+// réel : "MONTANT DES HS 115%", "150%", "175%"... exprimés en taux plein
+// (heures × taux horaire × multiplicateur), et non en supplément cumulé.
+// Cela évite de compter deux fois la base d'une heure qui serait à la fois
+// heure supp hebdomadaire et heure de nuit, par exemple.
 import { SHIFTS, shiftDurationHours, toMinutes } from './shiftDefs'
 import type { Planning } from './types'
 import { addDaysKey, compareDateKeys, formatDateKey, isSundayKey, mondayOfWeek, parseDateKey } from './dateUtils'
 
-const NIGHT_EVENING_START = 21 * 60
-const NIGHT_EVENING_END = 24 * 60
-const NIGHT_MORNING_START = 0
-const NIGHT_MORNING_END = 5 * 60
+const NIGHT_START = 21 * 60 // 21h
+const NIGHT_END = 5 * 60 // 5h (jour suivant)
+const WEEK_TIER1_START = 40 // 41e heure
+const WEEK_TIER2_START = 46 // au-delà de la 46e heure
 
-function overlapMinutes(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
-  return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart))
+export type HsRate = 0 | 0.15 | 0.5 | 0.75 | 1
+
+export interface HourBuckets {
+  normalHours: number // couvert par le salaire de base, pas de majoration
+  hs115Hours: number // +15%
+  hs150Hours: number // +50%
+  hs175Hours: number // +75% (nuit, ou dimanche/férié jour)
+  hs200Hours: number // +100% (dimanche/férié nuit)
+}
+
+function emptyBuckets(): HourBuckets {
+  return { normalHours: 0, hs115Hours: 0, hs150Hours: 0, hs175Hours: 0, hs200Hours: 0 }
+}
+
+function addRate(buckets: HourBuckets, rate: HsRate, hours: number) {
+  if (hours <= 0) return
+  if (rate === 0) buckets.normalHours += hours
+  else if (rate === 0.15) buckets.hs115Hours += hours
+  else if (rate === 0.5) buckets.hs150Hours += hours
+  else if (rate === 0.75) buckets.hs175Hours += hours
+  else buckets.hs200Hours += hours
+}
+
+/**
+ * Découpe un segment (une portion de vacation sur une seule journée
+ * calendaire) en sous-intervalles homogènes du point de vue de la
+ * majoration applicable, à partir des points de coupure "heure de nuit"
+ * (21h/5h) et "seuil hebdomadaire" (40h/46h), puis classe chaque
+ * sous-intervalle sur le taux le plus favorable.
+ */
+function classifySegment(
+  date: string,
+  startMin: number,
+  endMin: number,
+  cumStart: number,
+  isSpecialDay: boolean,
+  byDate: Map<string, HourBuckets>,
+): number {
+  const duration = (endMin - startMin) / 60
+  const cumEnd = cumStart + duration
+  if (duration <= 0) return cumEnd
+
+  const cuts = new Set<number>([startMin, endMin])
+  for (const boundary of [NIGHT_END, NIGHT_START]) {
+    if (boundary > startMin && boundary < endMin) cuts.add(boundary)
+  }
+  for (const weekBoundary of [WEEK_TIER1_START, WEEK_TIER2_START]) {
+    if (weekBoundary > cumStart && weekBoundary < cumEnd) {
+      const minuteOffset = startMin + (weekBoundary - cumStart) * 60
+      cuts.add(minuteOffset)
+    }
+  }
+
+  const points = [...cuts].sort((a, b) => a - b)
+  let bucket = byDate.get(date)
+  if (!bucket) {
+    bucket = emptyBuckets()
+    byDate.set(date, bucket)
+  }
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i]
+    const b = points[i + 1]
+    if (b <= a) continue
+    const d = (b - a) / 60
+    const mid = (a + b) / 2
+    const isNight = mid >= NIGHT_START || mid < NIGHT_END
+    const cumMid = cumStart + (mid - startMin) / 60
+    const tierRate: HsRate = cumMid < WEEK_TIER1_START ? 0 : cumMid < WEEK_TIER2_START ? 0.15 : 0.5
+    const specialRate: HsRate = isSpecialDay ? (isNight ? 1 : 0.75) : isNight ? 0.75 : 0
+    const rate: HsRate = tierRate > specialRate ? tierRate : specialRate
+    addRate(bucket, rate, d)
+  }
+
+  return cumEnd
+}
+
+export function computeDayBuckets(planning: Planning, holidays: Set<string>): Map<string, HourBuckets> {
+  const byDate = new Map<string, HourBuckets>()
+
+  const weeks = new Map<string, string[]>()
+  for (const [dateKey, shiftKey] of Object.entries(planning)) {
+    if (shiftDurationHours(shiftKey) <= 0) continue
+    const wk = mondayOfWeek(dateKey)
+    if (!weeks.has(wk)) weeks.set(wk, [])
+    weeks.get(wk)!.push(dateKey)
+  }
+
+  for (const dateKeys of weeks.values()) {
+    dateKeys.sort(compareDateKeys)
+    let cum = 0
+    for (const dateKey of dateKeys) {
+      const def = SHIFTS[planning[dateKey]]
+      if (!def.start || !def.end) continue
+      const startMin = toMinutes(def.start)
+      let endMin = toMinutes(def.end)
+      if (def.crossesMidnight) endMin += 1440
+
+      const seg1End = Math.min(endMin, 1440)
+      cum = classifySegment(dateKey, startMin, seg1End, cum, isSundayKey(dateKey) || holidays.has(dateKey), byDate)
+
+      if (def.crossesMidnight) {
+        const nextDate = addDaysKey(dateKey, 1)
+        const seg2End = endMin - 1440
+        cum = classifySegment(nextDate, 0, seg2End, cum, isSundayKey(nextDate) || holidays.has(nextDate), byDate)
+      }
+    }
+  }
+
+  return byDate
 }
 
 export interface WeekBreakdown {
   weekStart: string
   weekEnd: string
   totalHours: number
-  tier1Hours: number // 15% (41e-46e heure)
-  tier2Hours: number // 50% (au-delà de la 46e)
 }
 
 export function computeWeeklyBreakdown(planning: Planning): WeekBreakdown[] {
@@ -41,67 +150,10 @@ export function computeWeeklyBreakdown(planning: Planning): WeekBreakdown[] {
   }
   const result: WeekBreakdown[] = []
   for (const [weekStart, totalHours] of totals) {
-    const tier1Hours = Math.min(Math.max(totalHours - 40, 0), 6)
-    const tier2Hours = Math.max(totalHours - 46, 0)
-    result.push({ weekStart, weekEnd: addDaysKey(weekStart, 6), totalHours, tier1Hours, tier2Hours })
+    result.push({ weekStart, weekEnd: addDaysKey(weekStart, 6), totalHours })
   }
   result.sort((a, b) => compareDateKeys(a.weekStart, b.weekStart))
   return result
-}
-
-export interface DayCategoryHours {
-  date: string
-  nightHours: number // nuit hors dimanche/férié -> +75%
-  sundayHolidayDayHours: number // jour, dimanche/férié -> +75%
-  sundayHolidayNightHours: number // nuit, dimanche/férié -> +100%
-  normalHours: number // ni nuit ni dimanche/férié
-}
-
-export function computeDayCategories(planning: Planning, holidays: Set<string>): DayCategoryHours[] {
-  const byDate = new Map<string, DayCategoryHours>()
-  const ensure = (date: string) => {
-    let v = byDate.get(date)
-    if (!v) {
-      v = { date, nightHours: 0, sundayHolidayDayHours: 0, sundayHolidayNightHours: 0, normalHours: 0 }
-      byDate.set(date, v)
-    }
-    return v
-  }
-
-  for (const [dateKey, shiftKey] of Object.entries(planning)) {
-    const def = SHIFTS[shiftKey]
-    if (!def.start || !def.end) continue
-    const startMin = toMinutes(def.start)
-    let endMin = toMinutes(def.end)
-    if (def.crossesMidnight) endMin += 1440
-
-    const segments = [{ date: dateKey, startMin, endMin: Math.min(endMin, 1440) }]
-    if (def.crossesMidnight) {
-      segments.push({ date: addDaysKey(dateKey, 1), startMin: 0, endMin: endMin - 1440 })
-    }
-
-    for (const seg of segments) {
-      const duration = (seg.endMin - seg.startMin) / 60
-      if (duration <= 0) continue
-      const nightMin =
-        overlapMinutes(seg.startMin, seg.endMin, NIGHT_EVENING_START, NIGHT_EVENING_END) +
-        overlapMinutes(seg.startMin, seg.endMin, NIGHT_MORNING_START, NIGHT_MORNING_END)
-      const nightH = nightMin / 60
-      const nonNightH = duration - nightH
-      const special = isSundayKey(seg.date) || holidays.has(seg.date)
-
-      const bucket = ensure(seg.date)
-      if (special) {
-        bucket.sundayHolidayNightHours += nightH
-        bucket.sundayHolidayDayHours += nonNightH
-      } else {
-        bucket.nightHours += nightH
-        bucket.normalHours += nonNightH
-      }
-    }
-  }
-
-  return [...byDate.values()].sort((a, b) => compareDateKeys(a.date, b.date))
 }
 
 export interface PayPeriod {
@@ -133,42 +185,40 @@ export function shiftPayPeriod(period: PayPeriod, deltaMonths: number, startDay:
 export interface PeriodReport {
   period: PayPeriod
   totalHours: number
-  tier1Hours: number
-  tier2Hours: number
-  nightHours: number
-  sundayHolidayDayHours: number
-  sundayHolidayNightHours: number
+  normalHours: number
+  hs115Hours: number
+  hs150Hours: number
+  hs175Hours: number
+  hs200Hours: number
   weeks: WeekBreakdown[]
-  days: DayCategoryHours[]
 }
 
 export function computePeriodReport(planning: Planning, holidays: Set<string>, period: PayPeriod): PeriodReport {
+  const dayBuckets = computeDayBuckets(planning, holidays)
+  const totals = emptyBuckets()
+  for (const [date, buckets] of dayBuckets) {
+    if (date < period.start || date > period.end) continue
+    totals.normalHours += buckets.normalHours
+    totals.hs115Hours += buckets.hs115Hours
+    totals.hs150Hours += buckets.hs150Hours
+    totals.hs175Hours += buckets.hs175Hours
+    totals.hs200Hours += buckets.hs200Hours
+  }
+
+  const totalHours = totals.normalHours + totals.hs115Hours + totals.hs150Hours + totals.hs175Hours + totals.hs200Hours
+
   const allWeeks = computeWeeklyBreakdown(planning)
-  const weeksInPeriod = allWeeks.filter((w) => w.weekEnd >= period.start && w.weekEnd <= period.end)
-
-  const allDayCats = computeDayCategories(planning, holidays)
-  const daysInPeriod = allDayCats.filter((d) => d.date >= period.start && d.date <= period.end)
-
-  const totalHoursWorked = Object.entries(planning)
-    .filter(([date]) => date >= period.start && date <= period.end)
-    .reduce((sum, [, shiftKey]) => sum + shiftDurationHours(shiftKey), 0)
-
-  const tier1Hours = weeksInPeriod.reduce((s, w) => s + w.tier1Hours, 0)
-  const tier2Hours = weeksInPeriod.reduce((s, w) => s + w.tier2Hours, 0)
-  const nightHours = daysInPeriod.reduce((s, d) => s + d.nightHours, 0)
-  const sundayHolidayDayHours = daysInPeriod.reduce((s, d) => s + d.sundayHolidayDayHours, 0)
-  const sundayHolidayNightHours = daysInPeriod.reduce((s, d) => s + d.sundayHolidayNightHours, 0)
+  const weeksInPeriod = allWeeks.filter((w) => w.weekEnd >= period.start && w.weekStart <= period.end)
 
   return {
     period,
-    totalHours: totalHoursWorked,
-    tier1Hours,
-    tier2Hours,
-    nightHours,
-    sundayHolidayDayHours,
-    sundayHolidayNightHours,
+    totalHours,
+    normalHours: totals.normalHours,
+    hs115Hours: totals.hs115Hours,
+    hs150Hours: totals.hs150Hours,
+    hs175Hours: totals.hs175Hours,
+    hs200Hours: totals.hs200Hours,
     weeks: weeksInPeriod,
-    days: daysInPeriod,
   }
 }
 
@@ -178,37 +228,27 @@ export const LEGAL_MONTHLY_HOURS = (40 * 52) / 12
 export interface PayBreakdown {
   tauxHoraire: number
   baseAmount: number
-  tier1Amount: number
-  tier2Amount: number
-  nightAmount: number
-  sundayDayAmount: number
-  sundayNightAmount: number
+  hs115Amount: number
+  hs150Amount: number
+  hs175Amount: number
+  hs200Amount: number
   totalSupplements: number
   totalPay: number
 }
 
-/**
- * tier1/tier2 sont payées intégralement (taux + majoration) car ce sont des
- * heures travaillées en plus des heures normales couvertes par le salaire
- * de base. Les primes nuit/dimanche/férié sont des suppléments (majoration
- * seule) car la base de ces heures est déjà réglée soit par le salaire de
- * base, soit par le paiement intégral des heures supp ci-dessus.
- */
 export function computePay(report: PeriodReport, tauxHoraire: number, salaireBase: number): PayBreakdown {
-  const tier1Amount = report.tier1Hours * tauxHoraire * 1.15
-  const tier2Amount = report.tier2Hours * tauxHoraire * 1.5
-  const nightAmount = report.nightHours * tauxHoraire * 0.75
-  const sundayDayAmount = report.sundayHolidayDayHours * tauxHoraire * 0.75
-  const sundayNightAmount = report.sundayHolidayNightHours * tauxHoraire * 1.0
-  const totalSupplements = tier1Amount + tier2Amount + nightAmount + sundayDayAmount + sundayNightAmount
+  const hs115Amount = report.hs115Hours * tauxHoraire * 1.15
+  const hs150Amount = report.hs150Hours * tauxHoraire * 1.5
+  const hs175Amount = report.hs175Hours * tauxHoraire * 1.75
+  const hs200Amount = report.hs200Hours * tauxHoraire * 2.0
+  const totalSupplements = hs115Amount + hs150Amount + hs175Amount + hs200Amount
   return {
     tauxHoraire,
     baseAmount: salaireBase,
-    tier1Amount,
-    tier2Amount,
-    nightAmount,
-    sundayDayAmount,
-    sundayNightAmount,
+    hs115Amount,
+    hs150Amount,
+    hs175Amount,
+    hs200Amount,
     totalSupplements,
     totalPay: salaireBase + totalSupplements,
   }

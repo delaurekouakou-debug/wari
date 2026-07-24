@@ -17,7 +17,6 @@ export const DEFAULT_HOLIDAYS: Holiday[] = [
 
 export const DEFAULT_SETTINGS: Settings = {
   salaireBase: 0,
-  tauxHoraireBulletin: null,
   holidays: DEFAULT_HOLIDAYS,
   payPeriodStartDay: 16,
 }
@@ -25,15 +24,16 @@ export const DEFAULT_SETTINGS: Settings = {
 export function loadData(): AppData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { planning: {}, settings: DEFAULT_SETTINGS, version: 1 }
+    if (!raw) return { planning: {}, settings: DEFAULT_SETTINGS, paidByPeriod: {}, version: 1 }
     const parsed = JSON.parse(raw) as AppData
     return {
       planning: parsed.planning ?? {},
       settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
+      paidByPeriod: parsed.paidByPeriod ?? {},
       version: 1,
     }
   } catch {
-    return { planning: {}, settings: DEFAULT_SETTINGS, version: 1 }
+    return { planning: {}, settings: DEFAULT_SETTINGS, paidByPeriod: {}, version: 1 }
   }
 }
 

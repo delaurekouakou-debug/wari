@@ -56,17 +56,9 @@ export default function SettingsView({ settings, onChange }: Props) {
         <div className="text-sm rounded-md bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 px-3 py-2">
           Taux horaire légal calculé : <strong>{fcfa.format(Math.round(tauxHoraireLegal))} FCFA/h</strong>
         </div>
-        <label className="block text-sm">
-          Taux horaire réel (selon bulletin de paie) — optionnel, pour comparatif
-          <input
-            type="number"
-            min={0}
-            value={settings.tauxHoraireBulletin ?? ''}
-            onChange={(e) => update('tauxHoraireBulletin', e.target.value ? Number(e.target.value) : null)}
-            className="mt-1 w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5"
-            placeholder="ex: 950"
-          />
-        </label>
+        <p className="text-xs text-gray-500">
+          Pour comparer avec les montants réellement payés sur ton bulletin, utilise l'onglet Comparatif.
+        </p>
       </section>
 
       <section className="space-y-3">

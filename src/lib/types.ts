@@ -34,13 +34,24 @@ export interface Holiday {
 
 export interface Settings {
   salaireBase: number // FCFA / mois
-  tauxHoraireBulletin: number | null // FCFA / heure, saisi depuis le bulletin de paie, pour comparatif
   holidays: Holiday[]
   payPeriodStartDay: number // jour du mois où démarre la période de paie (ex: 16)
 }
 
+// Montants réellement payés (lus sur le bulletin de paie) pour une période,
+// saisis manuellement pour le comparatif payé / dû.
+export interface PaidAmounts {
+  hs115: number
+  hs150: number
+  hs175: number
+  hs200: number
+}
+
+export type PaidByPeriod = Record<string, PaidAmounts> // clé = period.start (YYYY-MM-DD)
+
 export interface AppData {
   planning: Planning
   settings: Settings
+  paidByPeriod: PaidByPeriod
   version: 1
 }
