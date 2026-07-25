@@ -1,4 +1,4 @@
-import type { AppData, Holiday, Settings } from './types'
+import type { AppData, BulletinData, Holiday, Settings } from './types'
 import { formatDateKey } from './dateUtils'
 
 const STORAGE_KEY = 'overtime-ci:data'
@@ -23,7 +23,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hsBases: { r115: 2838.46, r150: 3702.34, r175: 4319.4, r200: 4936.46 },
   panierBase: 1298,
   holidays: DEFAULT_HOLIDAYS,
-  payPeriodStartDay: 16,
+  payPeriodStartDay: 17,
   // Décret n°96-203 du 7 mars 1996 : travail en équipes successives organisé
   // en cycle de rotation dépassant la semaine -> seules les heures
   // dépassant la durée moyenne calculée sur le cycle complet sont des
@@ -32,14 +32,53 @@ export const DEFAULT_SETTINGS: Settings = {
   cycleDays: 6,
   cycleAnchor: formatDateKey(new Date()),
   normalWeeklyHours: 40,
+  categorieProfessionnelle: 'M4',
 }
 
 const EMPTY_PAID_LINE = { heures: 0, taux: 0 }
 
+function id(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `l${Math.random().toString(36).slice(2)}`
+}
+
+/** Modèle de bulletin pré-rempli avec les libellés/codes usuels, montants à 0 (à ajuster). */
+export function createDefaultBulletin(): BulletinData {
+  return {
+    gainsFixes: [
+      { id: id(), code: '0310', label: 'SALAIRE DE BASE', montant: 0 },
+      { id: id(), code: '0450', label: 'SURSALAIRE', montant: 0 },
+      { id: id(), code: '0545', label: 'ANCIENNETE', montant: 0 },
+      { id: id(), code: '1053', label: 'IDT DE LOGEMENT', montant: 0 },
+      { id: id(), code: '1210', label: 'IDT DE TRANSPORT', montant: 0 },
+    ],
+    retenuesStatutaires: [
+      { id: id(), code: '4010', label: 'CNPS RETRAITE', montant: 0 },
+      { id: id(), code: '4074', label: 'ASSURANCE MALADIE', montant: 0 },
+      { id: id(), code: '4085', label: 'COTISATION CMU', montant: 0 },
+      { id: id(), code: '4217', label: 'ITS A PAYER', montant: 0 },
+    ],
+    retenuesDiverses: [
+      { id: id(), code: '6522', label: 'RETENUE CANTINE', montant: 0 },
+      { id: id(), code: '6557', label: 'RETENUE MUTUELLE', montant: 0 },
+      { id: id(), code: '6572', label: 'RETENUE CANAL', montant: 0 },
+      { id: id(), code: '7181', label: 'PRET SCOLAIRE', montant: 0 },
+    ],
+  }
+}
+
+function normalizeBulletin(data: Partial<BulletinData> | undefined): BulletinData {
+  if (!data) return createDefaultBulletin()
+  return {
+    gainsFixes: data.gainsFixes ?? [],
+    retenuesStatutaires: data.retenuesStatutaires ?? [],
+    retenuesDiverses: data.retenuesDiverses ?? [],
+  }
+}
+
 export function loadData(): AppData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { planning: {}, settings: DEFAULT_SETTINGS, paidByPeriod: {}, version: 1 }
+    if (!raw) return { planning: {}, settings: DEFAULT_SETTINGS, paidByPeriod: {}, bulletinByPeriod: {}, version: 1 }
     const parsed = JSON.parse(raw) as AppData
     return {
       planning: parsed.planning ?? {},
@@ -61,10 +100,13 @@ export function loadData(): AppData {
           },
         ]),
       ),
+      bulletinByPeriod: Object.fromEntries(
+        Object.entries(parsed.bulletinByPeriod ?? {}).map(([period, data]) => [period, normalizeBulletin(data)]),
+      ),
       version: 1,
     }
   } catch {
-    return { planning: {}, settings: DEFAULT_SETTINGS, paidByPeriod: {}, version: 1 }
+    return { planning: {}, settings: DEFAULT_SETTINGS, paidByPeriod: {}, bulletinByPeriod: {}, version: 1 }
   }
 }
 

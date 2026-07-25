@@ -48,6 +48,17 @@ export default function SettingsView({ settings, onChange }: Props) {
     <div className="space-y-8 max-w-2xl">
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Rémunération</h2>
+        <label className="block text-sm max-w-xs">
+          Catégorie professionnelle
+          <input
+            type="text"
+            value={settings.categorieProfessionnelle}
+            onChange={(e) => update('categorieProfessionnelle', e.target.value)}
+            className="mt-1 w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1.5"
+            placeholder="ex: M4"
+          />
+          <span className="text-xs text-gray-500">Informatif, affiché sur l'onglet Bulletin.</span>
+        </label>
         <label className="block text-sm">
           Salaire de base mensuel (FCFA)
           <input

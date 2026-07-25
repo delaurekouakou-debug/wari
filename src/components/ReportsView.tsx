@@ -1,21 +1,20 @@
-import { useMemo, useState } from 'react'
-import { computePay, computePeriodReport, getPayPeriod, shiftPayPeriod } from '../lib/calcEngine'
+import { useMemo } from 'react'
+import { computePay, computePeriodReport, type PayPeriod } from '../lib/calcEngine'
 import { exportReportExcel, exportReportPdf } from '../lib/exportReport'
-import { formatDateKey } from '../lib/dateUtils'
 import type { Planning, Settings } from '../lib/types'
 
 interface Props {
   planning: Planning
   settings: Settings
+  period: PayPeriod
+  onShiftPeriod: (delta: number) => void
 }
 
 const fcfa = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 })
 const fcfa2 = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 })
 const hrs = (n: number) => `${n.toFixed(2)} h`
 
-export default function ReportsView({ planning, settings }: Props) {
-  const [period, setPeriod] = useState(() => getPayPeriod(formatDateKey(new Date()), settings.payPeriodStartDay))
-
+export default function ReportsView({ planning, settings, period, onShiftPeriod }: Props) {
   const holidaySet = useMemo(() => new Set(settings.holidays.map((h) => h.date)), [settings.holidays])
   const { overtimeMode, cycleDays, cycleAnchor, normalWeeklyHours } = settings
   const overtime = useMemo(
@@ -44,14 +43,14 @@ export default function ReportsView({ planning, settings }: Props) {
         <div className="flex items-center gap-2">
           <button
             className="px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
-            onClick={() => setPeriod((p) => shiftPayPeriod(p, -1, settings.payPeriodStartDay))}
+            onClick={() => onShiftPeriod(-1)}
           >
             ←
           </button>
           <h2 className="text-lg font-semibold">{report.period.label}</h2>
           <button
             className="px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
-            onClick={() => setPeriod((p) => shiftPayPeriod(p, 1, settings.payPeriodStartDay))}
+            onClick={() => onShiftPeriod(1)}
           >
             →
           </button>

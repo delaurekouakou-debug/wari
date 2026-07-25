@@ -66,11 +66,12 @@ export interface Settings {
   hsBases: HsBases
   panierBase: number // FCFA par vacation de nuit (indemnité de panier)
   holidays: Holiday[]
-  payPeriodStartDay: number // jour du mois où démarre la période de paie (ex: 16)
+  payPeriodStartDay: number // jour du mois où démarre la période de paie (ex: 17)
   overtimeMode: OvertimeMode
   cycleDays: number // longueur du cycle de rotation en jours (ex: 6 ou 8)
   cycleAnchor: string // date (YYYY-MM-DD) marquant le début d'un cycle de référence
   normalWeeklyHours: number // seuil hebdomadaire moyen normal avant majoration (40 en semaine civile, jusqu'à 42 en cycle continu)
+  categorieProfessionnelle: string // ex: "M4", informatif (affiché sur le bulletin)
 }
 
 // Une ligne "Nombre × Base = Montant", comme sur le bulletin de paie. Pour
@@ -93,9 +94,31 @@ export interface PaidAmounts {
 
 export type PaidByPeriod = Record<string, PaidAmounts> // clé = period.start (YYYY-MM-DD)
 
+// Une ligne libre du bulletin (gain ou retenue) : code bulletin (informatif),
+// libellé, montant modifiable directement.
+export interface BulletinLine {
+  id: string
+  code: string
+  label: string
+  montant: number
+}
+
+// Bulletin de salaire mensuel reconstitué pour une période : les gains fixes
+// et retenues sont éditables librement (montants copiés depuis le vrai
+// bulletin), les heures supp / prime de panier sont injectées
+// automatiquement depuis le moteur de calcul (non stockées ici).
+export interface BulletinData {
+  gainsFixes: BulletinLine[]
+  retenuesStatutaires: BulletinLine[]
+  retenuesDiverses: BulletinLine[]
+}
+
+export type BulletinByPeriod = Record<string, BulletinData> // clé = period.start (YYYY-MM-DD)
+
 export interface AppData {
   planning: Planning
   settings: Settings
   paidByPeriod: PaidByPeriod
+  bulletinByPeriod: BulletinByPeriod
   version: 1
 }

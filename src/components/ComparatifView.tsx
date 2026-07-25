@@ -1,16 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
-import {
-  computeDayBuckets,
-  computePay,
-  computePeriodReport,
-  getPayPeriod,
-  PANIER_SHIFT_KEYS,
-  shiftPayPeriod,
-} from '../lib/calcEngine'
+import { computeDayBuckets, computePay, computePeriodReport, PANIER_SHIFT_KEYS, type PayPeriod } from '../lib/calcEngine'
 import { exportComparatifExcel, exportComparatifPdf } from '../lib/exportReport'
-import { addDaysKey, compareDateKeys, formatDateKey, isSundayKey, parseDateKey } from '../lib/dateUtils'
+import { addDaysKey, compareDateKeys, isSundayKey, parseDateKey } from '../lib/dateUtils'
 import { SHIFTS } from '../lib/shiftDefs'
 import type { PaidAmounts, PaidByPeriod, PaidLine, Planning, Settings } from '../lib/types'
 
@@ -19,6 +12,8 @@ interface Props {
   settings: Settings
   paidByPeriod: PaidByPeriod
   onChange: (paidByPeriod: PaidByPeriod) => void
+  period: PayPeriod
+  onShiftPeriod: (delta: number) => void
 }
 
 const fcfa = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 })
@@ -53,9 +48,7 @@ function motifFor(d: DayDetail): string {
   return reasons.join(' · ')
 }
 
-export default function ComparatifView({ planning, settings, paidByPeriod, onChange }: Props) {
-  const [period, setPeriod] = useState(() => getPayPeriod(formatDateKey(new Date()), settings.payPeriodStartDay))
-
+export default function ComparatifView({ planning, settings, paidByPeriod, onChange, period, onShiftPeriod }: Props) {
   const holidaySet = useMemo(() => new Set(settings.holidays.map((h) => h.date)), [settings.holidays])
   const { overtimeMode, cycleDays, cycleAnchor, normalWeeklyHours } = settings
   const overtime = useMemo(
@@ -140,14 +133,14 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
         <div className="flex items-center gap-2">
           <button
             className="px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
-            onClick={() => setPeriod((p) => shiftPayPeriod(p, -1, settings.payPeriodStartDay))}
+            onClick={() => onShiftPeriod(-1)}
           >
             ←
           </button>
           <h2 className="text-lg font-semibold">{report.period.label}</h2>
           <button
             className="px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
-            onClick={() => setPeriod((p) => shiftPayPeriod(p, 1, settings.payPeriodStartDay))}
+            onClick={() => onShiftPeriod(1)}
           >
             →
           </button>

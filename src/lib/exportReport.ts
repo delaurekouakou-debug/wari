@@ -1,8 +1,8 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
-import type { PayBreakdown, PeriodReport } from './calcEngine'
-import type { PaidAmounts } from './types'
+import type { PayBreakdown, PayPeriod, PeriodReport } from './calcEngine'
+import type { BulletinData, PaidAmounts } from './types'
 
 const fcfa = (n: number) => `${Math.round(n).toLocaleString('fr-FR')} FCFA`
 const fcfa2 = (n: number) => `${n.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} FCFA`
@@ -182,4 +182,85 @@ export function exportComparatifExcel(report: PeriodReport, pay: PayBreakdown, p
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, sheet, 'Comparatif')
   XLSX.writeFile(wb, `comparatif-hs_${report.period.start}_${report.period.end}.xlsx`)
+}
+
+export interface BulletinTotals {
+  gainsFixesTotal: number
+  hsTotal: number
+  salaireBrut: number
+  retenuesStatutairesTotal: number
+  salaireAvantRetenues: number
+  retenuesDiversesTotal: number
+  netAPayer: number
+}
+
+interface BulletinHsRow {
+  code: string
+  label: string
+  montant: number
+}
+
+export function exportBulletinPdf(
+  period: PayPeriod,
+  categorie: string,
+  bulletin: BulletinData,
+  hsRows: BulletinHsRow[],
+  totals: BulletinTotals,
+) {
+  const doc = new jsPDF()
+  doc.setFontSize(14)
+  doc.text('Bulletin de salaire (estimation)', 14, 16)
+  doc.setFontSize(10)
+  doc.text(`Période : ${period.label}${categorie ? ` — Catégorie ${categorie}` : ''}`, 14, 23)
+
+  const rows: [string, string, string][] = [
+    ...bulletin.gainsFixes.map((l): [string, string, string] => [l.code, l.label, fcfa(l.montant)]),
+    ...hsRows.map((r): [string, string, string] => [r.code, r.label, fcfa(r.montant)]),
+    ['3000', '=== SALAIRE BRUT', fcfa(totals.salaireBrut)],
+    ...bulletin.retenuesStatutaires.map((l): [string, string, string] => [l.code, l.label, `-${fcfa(l.montant)}`]),
+    ['6500', '=== SALAIRE AVANT RETENUES', fcfa(totals.salaireAvantRetenues)],
+    ...bulletin.retenuesDiverses.map((l): [string, string, string] => [l.code, l.label, `-${fcfa(l.montant)}`]),
+    ['9200', 'NET A PAYER (APPOINT)', fcfa(totals.netAPayer)],
+  ]
+
+  autoTable(doc, {
+    startY: 30,
+    head: [['Code', 'Libellé', 'Montant']],
+    body: rows,
+    styles: { fontSize: 9 },
+    headStyles: { fillColor: [16, 128, 88] },
+    didParseCell: (data) => {
+      if (data.row.raw && (data.row.raw as string[])[1]?.toString().startsWith('===')) {
+        data.cell.styles.fontStyle = 'bold'
+      }
+    },
+  })
+
+  doc.save(`bulletin_${period.start}_${period.end}.pdf`)
+}
+
+export function exportBulletinExcel(
+  period: PayPeriod,
+  categorie: string,
+  bulletin: BulletinData,
+  hsRows: BulletinHsRow[],
+  totals: BulletinTotals,
+) {
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['Bulletin de salaire (estimation)'],
+    ['Période', period.label],
+    ['Catégorie', categorie],
+    [],
+    ['Code', 'Libellé', 'Montant (FCFA)'],
+    ...bulletin.gainsFixes.map((l) => [l.code, l.label, Math.round(l.montant)]),
+    ...hsRows.map((r) => [r.code, r.label, Math.round(r.montant)]),
+    ['3000', '=== SALAIRE BRUT', Math.round(totals.salaireBrut)],
+    ...bulletin.retenuesStatutaires.map((l) => [l.code, l.label, -Math.round(l.montant)]),
+    ['6500', '=== SALAIRE AVANT RETENUES', Math.round(totals.salaireAvantRetenues)],
+    ...bulletin.retenuesDiverses.map((l) => [l.code, l.label, -Math.round(l.montant)]),
+    ['9200', 'NET A PAYER (APPOINT)', Math.round(totals.netAPayer)],
+  ])
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, sheet, 'Bulletin')
+  XLSX.writeFile(wb, `bulletin_${period.start}_${period.end}.xlsx`)
 }
