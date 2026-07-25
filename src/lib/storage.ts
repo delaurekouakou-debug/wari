@@ -17,7 +17,7 @@ export const DEFAULT_HOLIDAYS: Holiday[] = [
 ]
 
 export const DEFAULT_SETTINGS: Settings = {
-  salaireBase: 0,
+  salaireBase: 186200,
   hsRates: { r115: 115, r150: 150, r175: 175, r200: 200 },
   // Bases horaires chargées (FCFA/h) telles que lues sur le bulletin de paie.
   hsBases: { r115: 2838.46, r150: 3702.34, r175: 4319.4, r200: 4936.46 },
@@ -41,27 +41,35 @@ function id(): string {
   return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `l${Math.random().toString(36).slice(2)}`
 }
 
-/** Modèle de bulletin pré-rempli avec les libellés/codes usuels, montants à 0 (à ajuster). */
+/**
+ * Modèle de bulletin pré-rempli avec les libellés/codes et montants exacts
+ * du bulletin de paie réel de l'utilisateur (gains fixes et retenues qui
+ * restent stables d'un mois à l'autre). Les heures supp et la prime de
+ * panier ne sont pas ici : elles sont injectées automatiquement depuis le
+ * moteur de calcul.
+ */
 export function createDefaultBulletin(): BulletinData {
   return {
     gainsFixes: [
-      { id: id(), code: '0310', label: 'SALAIRE DE BASE', montant: 0 },
-      { id: id(), code: '0450', label: 'SURSALAIRE', montant: 0 },
-      { id: id(), code: '0545', label: 'ANCIENNETE', montant: 0 },
-      { id: id(), code: '1053', label: 'IDT DE LOGEMENT', montant: 0 },
-      { id: id(), code: '1210', label: 'IDT DE TRANSPORT', montant: 0 },
+      { id: id(), code: '0310', label: 'SALAIRE DE BASE', montant: 186200 },
+      { id: id(), code: '0450', label: 'SURSALAIRE', montant: 241618 },
+      { id: id(), code: '0545', label: 'ANCIENNETE', montant: 5586 },
+      { id: id(), code: '1053', label: 'IDT DE LOGEMENT MEX', montant: 50000 },
+      { id: id(), code: '1210', label: 'IDT DE TRANSPORT', montant: 50000 },
     ],
     retenuesStatutaires: [
-      { id: id(), code: '4010', label: 'CNPS RETRAITE', montant: 0 },
-      { id: id(), code: '4074', label: 'ASSURANCE MALADIE', montant: 0 },
-      { id: id(), code: '4085', label: 'COTISATION CMU', montant: 0 },
-      { id: id(), code: '4217', label: 'ITS A PAYER', montant: 0 },
+      { id: id(), code: '4010', label: 'CNPS RETRAITE', montant: 40703 },
+      { id: id(), code: '4014', label: 'REGUL CNPS A ANNEE', montant: 1 },
+      { id: id(), code: '4074', label: 'ASSURANCE MALADIE MEX (MCI)', montant: 20000 },
+      { id: id(), code: '4085', label: 'COTISATION CMU', montant: 500 },
+      { id: id(), code: '4217', label: 'ITS A PAYER', montant: 109497 },
+      { id: id(), code: '4225', label: 'REGUL ITS A PAYER', montant: -4929 },
     ],
     retenuesDiverses: [
-      { id: id(), code: '6522', label: 'RETENUE CANTINE', montant: 0 },
-      { id: id(), code: '6557', label: 'RETENUE MUTUELLE', montant: 0 },
-      { id: id(), code: '6572', label: 'RETENUE CANAL', montant: 0 },
-      { id: id(), code: '7181', label: 'PRET SCOLAIRE', montant: 0 },
+      { id: id(), code: '6522', label: 'RETENUE CANTINE', montant: 9900 },
+      { id: id(), code: '6557', label: 'RETENUE MUTUELLE MACIT', montant: 5000 },
+      { id: id(), code: '6572', label: 'RETENUE CANAL HORIZON', montant: 15000 },
+      { id: id(), code: '7181', label: 'PRET SCOLAIRE', montant: 50000 },
     ],
   }
 }
