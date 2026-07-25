@@ -1,10 +1,9 @@
 import { useMemo } from 'react'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
-import { computeDayBuckets, computePay, computePeriodReport, PANIER_SHIFT_KEYS, type PayPeriod } from '../lib/calcEngine'
+import { computeDayDetails, computePay, computePeriodReport, motifForDay, type PayPeriod } from '../lib/calcEngine'
 import { exportComparatifExcel, exportComparatifPdf } from '../lib/exportReport'
-import { addDaysKey, compareDateKeys, isSundayKey, parseDateKey } from '../lib/dateUtils'
-import { SHIFTS } from '../lib/shiftDefs'
+import { parseDateKey } from '../lib/dateUtils'
 import type { PaidAmounts, PaidByPeriod, PaidLine, Planning, Settings } from '../lib/types'
 
 interface Props {
@@ -26,26 +25,6 @@ const EMPTY_PAID: PaidAmounts = {
   hs175: EMPTY_LINE,
   hs200: EMPTY_LINE,
   panier: EMPTY_LINE,
-}
-
-interface DayDetail {
-  date: string
-  shiftLabel: string
-  isSpecial: boolean
-  isPanier: boolean
-  hs115: number
-  hs150: number
-  hs175: number
-  hs200: number
-}
-
-function motifFor(d: DayDetail): string {
-  const reasons: string[] = []
-  if (d.hs115 > 0 || d.hs150 > 0) reasons.push('Heures supp (seuil hebdomadaire/cycle dépassé)')
-  if (d.hs175 > 0) reasons.push(d.isSpecial ? 'Dimanche/férié (jour)' : 'Nuit (21h-5h)')
-  if (d.hs200 > 0) reasons.push('Nuit + dimanche/férié')
-  if (d.isPanier) reasons.push('Vacation de nuit (panier)')
-  return reasons.join(' · ')
 }
 
 export default function ComparatifView({ planning, settings, paidByPeriod, onChange, period, onShiftPeriod }: Props) {
@@ -94,37 +73,9 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
   )
   const totalEcart = totalPaid - totalDue
 
-  const dayDetails = useMemo<DayDetail[]>(() => {
-    const buckets = computeDayBuckets(planning, holidaySet, overtime.mode, overtime.cycleDays, overtime.cycleAnchor, overtime.normalWeeklyHours)
-    const details: DayDetail[] = []
-    for (const [date, b] of buckets) {
-      if (date < period.start || date > period.end) continue
-      const shiftKey = planning[date]
-      const isPanier = !!shiftKey && PANIER_SHIFT_KEYS.includes(shiftKey)
-      const hasHs = b.hs115Hours > 0 || b.hs150Hours > 0 || b.hs175Hours > 0 || b.hs200Hours > 0
-      if (!hasHs && !isPanier) continue
-
-      let shiftLabel: string
-      if (shiftKey && shiftKey !== 'REPOS') {
-        shiftLabel = SHIFTS[shiftKey].label
-      } else {
-        const prevShift = planning[addDaysKey(date, -1)]
-        shiftLabel = prevShift && SHIFTS[prevShift].crossesMidnight ? `${SHIFTS[prevShift].label} (suite)` : '—'
-      }
-
-      details.push({
-        date,
-        shiftLabel,
-        isSpecial: isSundayKey(date) || holidaySet.has(date),
-        isPanier,
-        hs115: b.hs115Hours,
-        hs150: b.hs150Hours,
-        hs175: b.hs175Hours,
-        hs200: b.hs200Hours,
-      })
-    }
-    details.sort((a, b) => compareDateKeys(a.date, b.date))
-    return details
+  const dayDetails = useMemo(() => {
+    const all = computeDayDetails(planning, holidaySet, overtime.mode, overtime.cycleDays, overtime.cycleAnchor, overtime.normalWeeklyHours)
+    return all.filter((d) => d.date >= period.start && d.date <= period.end)
   }, [planning, holidaySet, period, overtime])
 
   return (
@@ -147,7 +98,7 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
         </div>
         <div className="flex gap-2 no-print">
           <button
-            onClick={() => exportComparatifPdf(report, pay, paid)}
+            onClick={() => exportComparatifPdf(report, pay, paid, settings, dayDetails)}
             className="px-3 py-1.5 rounded-md bg-gray-800 text-white hover:bg-gray-900 text-sm"
           >
             Export PDF
@@ -390,7 +341,7 @@ export default function ComparatifView({ planning, settings, paidByPeriod, onCha
                     <td className="py-1 pr-3">{d.hs175 > 0 ? hrs(d.hs175) : '—'}</td>
                     <td className="py-1 pr-3">{d.hs200 > 0 ? hrs(d.hs200) : '—'}</td>
                     <td className="py-1 pr-3">{d.isPanier ? '1 vac.' : '—'}</td>
-                    <td className="py-1 pr-3 text-gray-600 dark:text-gray-400">{motifFor(d)}</td>
+                    <td className="py-1 pr-3 text-gray-600 dark:text-gray-400">{motifForDay(d)}</td>
                   </tr>
                 ))}
               </tbody>

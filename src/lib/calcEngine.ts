@@ -228,6 +228,70 @@ export function computeReferenceBreakdown(
   return result
 }
 
+export interface DayDetail {
+  date: string
+  shiftLabel: string
+  isSpecial: boolean
+  isPanier: boolean
+  hs115: number
+  hs150: number
+  hs175: number
+  hs200: number
+}
+
+/**
+ * Détail jour par jour (uniquement les jours générant des heures majorées
+ * ou une prime de panier), pour servir de preuve concrète — date par date
+ * — dans les échanges avec les RH.
+ */
+export function computeDayDetails(
+  planning: Planning,
+  holidays: Set<string>,
+  mode: OvertimeMode,
+  cycleDays: number,
+  cycleAnchor: string,
+  normalWeeklyHours: number,
+): DayDetail[] {
+  const buckets = computeDayBuckets(planning, holidays, mode, cycleDays, cycleAnchor, normalWeeklyHours)
+  const details: DayDetail[] = []
+  for (const [date, b] of buckets) {
+    const shiftKey = planning[date]
+    const isPanier = !!shiftKey && PANIER_SHIFT_KEYS.includes(shiftKey)
+    const hasHs = b.hs115Hours > 0 || b.hs150Hours > 0 || b.hs175Hours > 0 || b.hs200Hours > 0
+    if (!hasHs && !isPanier) continue
+
+    let shiftLabel: string
+    if (shiftKey && shiftKey !== 'REPOS') {
+      shiftLabel = SHIFTS[shiftKey].label
+    } else {
+      const prevShift = planning[addDaysKey(date, -1)]
+      shiftLabel = prevShift && SHIFTS[prevShift].crossesMidnight ? `${SHIFTS[prevShift].label} (suite)` : '—'
+    }
+
+    details.push({
+      date,
+      shiftLabel,
+      isSpecial: isSundayKey(date) || holidays.has(date),
+      isPanier,
+      hs115: b.hs115Hours,
+      hs150: b.hs150Hours,
+      hs175: b.hs175Hours,
+      hs200: b.hs200Hours,
+    })
+  }
+  details.sort((a, b) => compareDateKeys(a.date, b.date))
+  return details
+}
+
+export function motifForDay(d: DayDetail): string {
+  const reasons: string[] = []
+  if (d.hs115 > 0 || d.hs150 > 0) reasons.push('Heures supp (seuil hebdomadaire/cycle dépassé)')
+  if (d.hs175 > 0) reasons.push(d.isSpecial ? 'Dimanche/férié (jour)' : 'Nuit (21h-5h)')
+  if (d.hs200 > 0) reasons.push('Nuit + dimanche/férié')
+  if (d.isPanier) reasons.push('Vacation de nuit (panier)')
+  return reasons.join(' · ')
+}
+
 export interface PayPeriod {
   start: string
   end: string
